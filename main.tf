@@ -83,7 +83,7 @@ resource "google_compute_firewall" "solana_gossip" {
   target_tags   = ["solana-node"]
 }
 
-# === NODOS SOLANA ===
+# === SOLANA NODES ===
 
 module "solana_nodes" {
   source   = "./terraform_modules/solana-node"

@@ -14,7 +14,7 @@ resource "google_compute_instance" "solana_node" {
   network_interface {
     subnetwork = var.subnet_name
     access_config {
-      # IP pública efímera
+      # Ephemeral public IP
     }
   }
 

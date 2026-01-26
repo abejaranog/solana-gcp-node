@@ -1,13 +1,13 @@
 # Makefile - Solana GCP Node Blueprint
-# Guía paso a paso para usuarios sin experiencia en infraestructura
+# Step-by-step guide for users without infrastructure experience
 
 .PHONY: help init check deploy plan destroy ssh logs smoke-test status clean
 
-# Variables (puedes sobrescribirlas: make ssh NODE=solana-dev-node-01)
+# Variables (you can override: make ssh NODE=solana-dev-node-01)
 ZONE ?= europe-southwest1-a
 NODE ?= solana-dev-node-00
 
-# Colores para mensajes
+# Colors for messages
 GREEN  := \033[0;32m
 YELLOW := \033[0;33m
 RED    := \033[0;31m
@@ -15,237 +15,237 @@ BLUE   := \033[0;34m
 NC     := \033[0m # No Color
 
 #==============================================================================
-# AYUDA - Empieza aquí si es tu primera vez
+# HELP - Start here if it's your first time
 #==============================================================================
 
 help:
 	@echo ""
 	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(BLUE)║          SOLANA GCP NODE - GUÍA PARA PRINCIPIANTES            ║$(NC)"
+	@echo "$(BLUE)║          SOLANA GCP NODE - BEGINNER'S GUIDE                   ║$(NC)"
 	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@echo "$(GREEN)🚀 PRIMEROS PASOS (ejecuta en orden):$(NC)"
+	@echo "$(GREEN)FIRST STEPS (run in order):$(NC)"
 	@echo ""
-	@echo "  1. $(YELLOW)make check$(NC)      - Verifica que tienes todo instalado"
-	@echo "  2. $(YELLOW)make init$(NC)       - Configura tu proyecto GCP"
-	@echo "  3. $(YELLOW)make plan$(NC)       - Previsualiza qué se va a crear (opcional)"
-	@echo "  4. $(YELLOW)make deploy$(NC)     - Despliega tu nodo Solana (~10 min)"
+	@echo "  1. $(YELLOW)make check$(NC)      - Verify you have everything installed"
+	@echo "  2. $(YELLOW)make init$(NC)       - Configure your GCP project"
+	@echo "  3. $(YELLOW)make plan$(NC)       - Preview what will be created (optional)"
+	@echo "  4. $(YELLOW)make deploy$(NC)     - Deploy your Solana node (~10 min)"
 	@echo ""
-	@echo "$(GREEN)📊 MONITOREO:$(NC)"
+	@echo "$(GREEN)MONITORING:$(NC)"
 	@echo ""
-	@echo "  $(YELLOW)make status$(NC)       - Ver estado de tus nodos"
-	@echo "  $(YELLOW)make logs$(NC)         - Ver progreso de instalación en tiempo real"
-	@echo "  $(YELLOW)make smoke-test$(NC)   - Verificar que todo funciona correctamente"
+	@echo "  $(YELLOW)make status$(NC)       - View status of your nodes"
+	@echo "  $(YELLOW)make logs$(NC)         - View installation progress in real-time"
+	@echo "  $(YELLOW)make smoke-test$(NC)   - Verify everything works correctly"
 	@echo ""
-	@echo "$(GREEN)🔧 ACCESO:$(NC)"
+	@echo "$(GREEN)ACCESS:$(NC)"
 	@echo ""
-	@echo "  $(YELLOW)make ssh$(NC)          - Conectar al nodo por SSH"
-	@echo "  $(YELLOW)make ssh NODE=solana-dev-node-01$(NC)  - Conectar a nodo específico"
+	@echo "  $(YELLOW)make ssh$(NC)          - Connect to node via SSH"
+	@echo "  $(YELLOW)make ssh NODE=solana-dev-node-01$(NC)  - Connect to specific node"
 	@echo ""
-	@echo "$(GREEN)🗑️  LIMPIEZA:$(NC)"
+	@echo "$(GREEN)CLEANUP:$(NC)"
 	@echo ""
-	@echo "  $(YELLOW)make destroy$(NC)      - Eliminar toda la infraestructura (pide confirmación)"
-	@echo "  $(YELLOW)make clean$(NC)        - Limpiar archivos temporales de Terraform"
+	@echo "  $(YELLOW)make destroy$(NC)      - Remove all infrastructure (asks for confirmation)"
+	@echo "  $(YELLOW)make clean$(NC)        - Clean Terraform temporary files"
 	@echo ""
-	@echo "$(BLUE)💡 TIPS:$(NC)"
-	@echo "  - Si es tu primera vez, ejecuta: make check && make init && make deploy"
-	@echo "  - El nodo tarda ~8-10 minutos en estar listo después del deploy"
-	@echo "  - Usa 'make logs' para ver el progreso de instalación"
-	@echo "  - Recuerda hacer 'make destroy' cuando termines para no gastar dinero"
+	@echo "$(BLUE)TIPS:$(NC)"
+	@echo "  - If it's your first time, run: make check && make init && make deploy"
+	@echo "  - Node takes ~8-10 minutes to be ready after deploy"
+	@echo "  - Use 'make logs' to view installation progress"
+	@echo "  - Remember to run 'make destroy' when done to avoid costs"
 	@echo ""
 
 #==============================================================================
-# VERIFICACIÓN DE PRERREQUISITOS
+# PREREQUISITES VERIFICATION
 #==============================================================================
 
 check:
 	@echo ""
-	@echo "$(BLUE)🔍 Verificando prerrequisitos...$(NC)"
+	@echo "$(BLUE)Verifying prerequisites...$(NC)"
 	@echo ""
 	@command -v terraform >/dev/null 2>&1 && \
-		echo "$(GREEN)✓ Terraform instalado:$(NC) $$(terraform version | head -n1)" || \
-		(echo "$(RED)✗ Terraform NO encontrado$(NC)" && \
-		 echo "  Instala desde: https://www.terraform.io/downloads" && exit 1)
+		echo "$(GREEN)[OK] Terraform installed:$(NC) $$(terraform version | head -n1)" || \
+		(echo "$(RED)[ERROR] Terraform NOT found$(NC)" && \
+		 echo "  Install from: https://www.terraform.io/downloads" && exit 1)
 	@command -v gcloud >/dev/null 2>&1 && \
-		echo "$(GREEN)✓ gcloud CLI instalado:$(NC) $$(gcloud version | head -n1)" || \
-		(echo "$(RED)✗ gcloud CLI NO encontrado$(NC)" && \
-		 echo "  Instala desde: https://cloud.google.com/sdk/docs/install" && exit 1)
+		echo "$(GREEN)[OK] gcloud CLI installed:$(NC) $$(gcloud version | head -n1)" || \
+		(echo "$(RED)[ERROR] gcloud CLI NOT found$(NC)" && \
+		 echo "  Install from: https://cloud.google.com/sdk/docs/install" && exit 1)
 	@gcloud auth list --filter=status:ACTIVE --format="value(account)" >/dev/null 2>&1 && \
-		echo "$(GREEN)✓ gcloud autenticado:$(NC) $$(gcloud auth list --filter=status:ACTIVE --format='value(account)')" || \
-		(echo "$(RED)✗ gcloud NO autenticado$(NC)" && \
-		 echo "  Ejecuta: gcloud auth login" && exit 1)
+		echo "$(GREEN)[OK] gcloud authenticated:$(NC) $$(gcloud auth list --filter=status:ACTIVE --format='value(account)')" || \
+		(echo "$(RED)[ERROR] gcloud NOT authenticated$(NC)" && \
+		 echo "  Run: gcloud auth login" && exit 1)
 	@echo ""
-	@echo "$(GREEN)✅ Todos los prerrequisitos están OK$(NC)"
+	@echo "$(GREEN)[OK] All prerequisites are OK$(NC)"
 	@echo ""
 
 #==============================================================================
-# INICIALIZACIÓN DEL PROYECTO
+# PROJECT INITIALIZATION
 #==============================================================================
 
 init: check
 	@echo ""
-	@echo "$(BLUE)🔧 Configurando proyecto...$(NC)"
+	@echo "$(BLUE)Configuring project...$(NC)"
 	@echo ""
 	@if [ -z "$$TF_VAR_project_id" ]; then \
-		echo "$(YELLOW)⚠️  Variable TF_VAR_project_id no configurada$(NC)"; \
+		echo "$(YELLOW)[WARNING] Variable TF_VAR_project_id not configured$(NC)"; \
 		echo ""; \
-		echo "Configúrala con tu ID de proyecto GCP:"; \
-		echo "  $(GREEN)export TF_VAR_project_id=\"tu-proyecto-gcp\"$(NC)"; \
+		echo "Configure it with your GCP project ID:"; \
+		echo "  $(GREEN)export TF_VAR_project_id=\"your-gcp-project\"$(NC)"; \
 		echo ""; \
-		echo "Para ver tus proyectos: $(GREEN)gcloud projects list$(NC)"; \
+		echo "To view your projects: $(GREEN)gcloud projects list$(NC)"; \
 		echo ""; \
 		exit 1; \
 	fi
-	@echo "$(GREEN)✓ Proyecto configurado:$(NC) $$TF_VAR_project_id"
+	@echo "$(GREEN)[OK] Project configured:$(NC) $$TF_VAR_project_id"
 	@echo ""
-	@echo "$(BLUE)Inicializando Terraform...$(NC)"
+	@echo "$(BLUE)Initializing Terraform...$(NC)"
 	@terraform init -upgrade
 	@echo ""
-	@echo "$(GREEN)✅ Inicialización completa$(NC)"
+	@echo "$(GREEN)[OK] Initialization complete$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Siguiente paso:$(NC) make plan  (para ver qué se va a crear)"
-	@echo "            o: make deploy (para desplegar directamente)"
+	@echo "$(YELLOW)Next step:$(NC) make plan  (to preview what will be created)"
+	@echo "        or: make deploy (to deploy directly)"
 	@echo ""
 
 #==============================================================================
-# PLANIFICACIÓN (PREVISUALIZACIÓN)
+# PLANNING (PREVIEW)
 #==============================================================================
 
 plan:
 	@echo ""
-	@echo "$(BLUE)� Previsualizando cambios...$(NC)"
+	@echo "$(BLUE)Previewing changes...$(NC)"
 	@echo ""
-	@echo "Esto te muestra QUÉ se va a crear sin crear nada todavía."
+	@echo "This shows you WHAT will be created without creating anything yet."
 	@echo ""
 	@terraform plan
 	@echo ""
-	@echo "$(YELLOW)Si todo se ve bien, ejecuta:$(NC) make deploy"
+	@echo "$(YELLOW)If everything looks good, run:$(NC) make deploy"
 	@echo ""
 
 #==============================================================================
-# DESPLIEGUE
+# DEPLOYMENT
 #==============================================================================
 
 deploy:
 	@echo ""
 	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(BLUE)║                  DESPLEGANDO NODO SOLANA                       ║$(NC)"
+	@echo "$(BLUE)║                  DEPLOYING SOLANA NODE                         ║$(NC)"
 	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
 	@if [ -z "$$TF_VAR_project_id" ]; then \
-		echo "$(RED)✗ Error: TF_VAR_project_id no configurado$(NC)"; \
+		echo "$(RED)[ERROR] TF_VAR_project_id not configured$(NC)"; \
 		echo ""; \
-		echo "Ejecuta primero: $(GREEN)make init$(NC)"; \
+		echo "Run first: $(GREEN)make init$(NC)"; \
 		echo ""; \
 		exit 1; \
 	fi
-	@echo "$(YELLOW)Proyecto:$(NC) $$TF_VAR_project_id"
-	@echo "$(YELLOW)Nodos a crear:$(NC) $${TF_VAR_node_count:-1}"
+	@echo "$(YELLOW)Project:$(NC) $$TF_VAR_project_id"
+	@echo "$(YELLOW)Nodes to create:$(NC) $${TF_VAR_node_count:-1}"
 	@echo ""
-	@echo "$(BLUE)Terraform está creando la infraestructura...$(NC)"
+	@echo "$(BLUE)Terraform is creating infrastructure...$(NC)"
 	@terraform apply -auto-approve
 	@echo ""
 	@echo "$(GREEN)╔════════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(GREEN)║                    ✅ DESPLIEGUE COMPLETO                       ║$(NC)"
+	@echo "$(GREEN)║                    DEPLOYMENT COMPLETE                         ║$(NC)"
 	@echo "$(GREEN)╚════════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@echo "$(YELLOW)⏳ El nodo está instalando software (Rust, Solana, Anchor)...$(NC)"
-	@echo "   Esto tarda ~8-10 minutos."
+	@echo "$(YELLOW)[WAIT] Node is installing software (Rust, Solana, Anchor)...$(NC)"
+	@echo "   This takes ~8-10 minutes."
 	@echo ""
-	@echo "$(BLUE)Mientras esperas, puedes:$(NC)"
-	@echo "  1. Ver el progreso:  $(GREEN)make logs$(NC)"
-	@echo "  2. Ver el estado:    $(GREEN)make status$(NC)"
+	@echo "$(BLUE)While you wait, you can:$(NC)"
+	@echo "  1. View progress:  $(GREEN)make logs$(NC)"
+	@echo "  2. View status:    $(GREEN)make status$(NC)"
 	@echo ""
-	@echo "$(BLUE)Cuando termine (8-10 min):$(NC)"
-	@echo "  1. Verificar:        $(GREEN)make smoke-test$(NC)"
-	@echo "  2. Conectar:         $(GREEN)make ssh$(NC)"
+	@echo "$(BLUE)When finished (8-10 min):$(NC)"
+	@echo "  1. Verify:         $(GREEN)make smoke-test$(NC)"
+	@echo "  2. Connect:        $(GREEN)make ssh$(NC)"
 	@echo ""
 
 #==============================================================================
-# DESTRUCCIÓN (CON CONFIRMACIÓN)
+# DESTRUCTION (WITH CONFIRMATION)
 #==============================================================================
 
 destroy:
 	@echo ""
 	@echo "$(RED)╔════════════════════════════════════════════════════════════════╗$(NC)"
-	@echo "$(RED)║                    ⚠️  ADVERTENCIA                             ║$(NC)"
+	@echo "$(RED)║                    WARNING                                     ║$(NC)"
 	@echo "$(RED)╚════════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Esto va a ELIMINAR toda la infraestructura:$(NC)"
-	@echo "  - Nodos Solana"
-	@echo "  - VPC y subnets"
-	@echo "  - Reglas de firewall"
-	@echo "  - Discos (500GB por nodo)"
+	@echo "$(YELLOW)This will DELETE all infrastructure:$(NC)"
+	@echo "  - Solana nodes"
+	@echo "  - VPC and subnets"
+	@echo "  - Firewall rules"
+	@echo "  - Disks (500GB per node)"
 	@echo ""
-	@echo "$(RED)Esta acción NO se puede deshacer.$(NC)"
+	@echo "$(RED)This action CANNOT be undone.$(NC)"
 	@echo ""
-	@read -p "¿Estás seguro? Escribe 'si' para confirmar: " confirm; \
-	if [ "$$confirm" = "si" ]; then \
+	@read -p "Are you sure? Type 'yes' to confirm: " confirm; \
+	if [ "$$confirm" = "yes" ]; then \
 		echo ""; \
-		echo "$(YELLOW)Destruyendo infraestructura...$(NC)"; \
+		echo "Destroying infrastructure..."; \
 		terraform destroy -auto-approve; \
 		echo ""; \
-		echo "$(GREEN)✅ Infraestructura eliminada$(NC)"; \
+		@echo "[OK] Infrastructure removed"; \
 		echo ""; \
 	else \
 		echo ""; \
-		echo "$(BLUE)Cancelado. No se eliminó nada.$(NC)"; \
+		echo "Cancelled. Nothing was deleted."; \
 		echo ""; \
 	fi
 
 #==============================================================================
-# MONITOREO Y ACCESO
+# MONITORING AND ACCESS
 #==============================================================================
 
 status:
 	@echo ""
-	@echo "$(BLUE)📊 Estado de los nodos Solana:$(NC)"
+	@echo "$(BLUE)Solana nodes status:$(NC)"
 	@echo ""
 	@gcloud compute instances list --filter="name~solana-dev-node" \
-		--format="table(name,status,zone,networkInterfaces[0].accessConfigs[0].natIP:label=IP_EXTERNA)" 2>/dev/null || \
-		(echo "$(YELLOW)No hay nodos desplegados todavía.$(NC)" && \
-		 echo "Ejecuta: $(GREEN)make deploy$(NC)")
+		--format="table(name,status,zone,networkInterfaces[0].accessConfigs[0].natIP:label=EXTERNAL_IP)" 2>/dev/null || \
+		(echo "$(YELLOW)No nodes deployed yet.$(NC)" && \
+		 echo "Run: $(GREEN)make deploy$(NC)")
 	@echo ""
 
 logs:
 	@echo ""
-	@echo "$(BLUE)📜 Logs de instalación del nodo $(YELLOW)$(NODE)$(NC)..."
-	@echo "   (Presiona Ctrl+C para salir)"
+	@echo "$(BLUE)Installation logs for node $(YELLOW)$(NODE)$(NC)..."
+	@echo "   (Press Ctrl+C to exit)"
 	@echo ""
 	@gcloud compute ssh $(NODE) --zone=$(ZONE) --tunnel-through-iap -- tail -f /var/log/solana-setup.log 2>/dev/null || \
 		gcloud compute ssh $(NODE) --zone=$(ZONE) -- tail -f /var/log/solana-setup.log 2>/dev/null || \
-		(echo "$(RED)✗ No se pudo conectar al nodo$(NC)" && \
-		 echo "Verifica que existe: $(GREEN)make status$(NC)")
+		(echo "$(RED)[ERROR] Could not connect to node$(NC)" && \
+		 echo "Verify it exists: $(GREEN)make status$(NC)")
 
 smoke-test:
 	@echo ""
-	@echo "$(BLUE)🧪 Ejecutando smoke test en $(YELLOW)$(NODE)$(NC)...$(NC)"
+	@echo "$(BLUE)Running smoke test on $(YELLOW)$(NODE)$(NC)...$(NC)"
 	@echo ""
 	@gcloud compute ssh $(NODE) --zone=$(ZONE) --tunnel-through-iap -- ./run-smoke-test.sh 2>/dev/null || \
 		gcloud compute ssh $(NODE) --zone=$(ZONE) -- ./run-smoke-test.sh 2>/dev/null || \
-		(echo "$(RED)✗ No se pudo ejecutar el test$(NC)" && \
-		 echo "Verifica que el nodo esté listo: $(GREEN)make logs$(NC)")
+		(echo "$(RED)[ERROR] Could not run test$(NC)" && \
+		 echo "Verify node is ready: $(GREEN)make logs$(NC)")
 	@echo ""
 
 ssh:
 	@echo ""
-	@echo "$(BLUE)🔐 Conectando a $(YELLOW)$(NODE)$(NC)...$(NC)"
+	@echo "$(BLUE)Connecting to $(YELLOW)$(NODE)$(NC)...$(NC)"
 	@echo ""
 	@gcloud compute ssh $(NODE) --zone=$(ZONE) --tunnel-through-iap 2>/dev/null || \
 		gcloud compute ssh $(NODE) --zone=$(ZONE) 2>/dev/null || \
-		(echo "$(RED)✗ No se pudo conectar$(NC)" && \
-		 echo "Verifica que el nodo existe: $(GREEN)make status$(NC)")
+		(echo "$(RED)[ERROR] Could not connect$(NC)" && \
+		 echo "Verify node exists: $(GREEN)make status$(NC)")
 
 #==============================================================================
-# LIMPIEZA
+# CLEANUP
 #==============================================================================
 
 clean:
 	@echo ""
-	@echo "$(BLUE)🧹 Limpiando archivos temporales de Terraform...$(NC)"
+	@echo "$(BLUE)Cleaning Terraform temporary files...$(NC)"
 	@rm -rf .terraform .terraform.lock.hcl terraform.tfstate terraform.tfstate.backup
-	@echo "$(GREEN)✅ Limpieza completa$(NC)"
+	@echo "$(GREEN)[OK] Cleanup complete$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Nota:$(NC) Esto solo elimina archivos locales."
-	@echo "Para eliminar la infraestructura en GCP: $(GREEN)make destroy$(NC)"
+	@echo "$(YELLOW)Note:$(NC) This only removes local files."
+	@echo "To remove infrastructure in GCP: $(GREEN)make destroy$(NC)"
 	@echo ""

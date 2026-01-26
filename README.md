@@ -1,202 +1,202 @@
 # Solana GCP Node Blueprint
 
-**Infrastructure-as-Code para desplegar nodos de desarrollo Solana en Google Cloud Platform.**
+**Infrastructure-as-Code to deploy Solana development nodes on Google Cloud Platform.**
 
-Este blueprint resuelve ese problema: de 2+ horas de setup manual a **10 minutos automatizados**.
-
----
-
-## Por qué este proyecto existe
-
-**Problema:** Configurar un nodo Solana no es solo `apt install solana`. Requiere kernel tuning específico (UDP buffers, file descriptors), toolchain completo (Rust, Anchor, Node.js), y conocimiento de las particularidades del protocolo.
-
-**Solución:** Terraform modular + startup script idempotente que aplica las optimizaciones correctas desde el primer boot.
-
-**Impacto:**
-- **Developer Tooling:** Reduce fricción de onboarding a Solana
-- **Censorship Resistance:** Facilita diversificación geográfica (incluye región Madrid)
-- **Reproducibilidad:** Infraestructura versionada, auditable
+This blueprint solves that problem: from 4+ hours of manual setup to **10 automated minutes**.
 
 ---
 
-## Arquitectura
+## Why This Project Exists
+
+**Problem:** Setting up a Solana node isn't just `apt install solana`. It requires specific kernel tuning (UDP buffers, file descriptors), complete toolchain (Rust, Anchor, Node.js), and knowledge of protocol particularities.
+
+**Solution:** Modular Terraform + idempotent startup script that applies the correct optimizations from first boot.
+
+**Impact:**
+- **Developer Tooling:** Reduces Solana onboarding friction
+- **Censorship Resistance:** Facilitates geographic diversification (includes Madrid region)
+- **Reproducibility:** Versioned, auditable infrastructure
+
+---
+
+## Architecture
 
 ```
 .
-├── main.tf                          # Orquestador: VPC, firewall, módulos
-├── variables.tf                     # Configuración centralizada
-├── outputs.tf                       # Endpoints y comandos útiles
+├── main.tf                          # Orchestrator: VPC, firewall, modules
+├── variables.tf                     # Centralized configuration
+├── outputs.tf                       # Endpoints and useful commands
 ├── terraform_modules/
-│   └── solana-node/                 # Módulo reutilizable
-│       ├── main.tf                  # Definición de instancia
+│   └── solana-node/                 # Reusable module
+│       ├── main.tf                  # Instance definition
 │       ├── variables.tf
 │       └── outputs.tf
 └── scripts/
     └── setup-solana.sh              # Startup script (kernel + software)
 ```
 
-**Decisiones de diseño:**
+**Design Decisions:**
 
-1. **Modularización:** El módulo `solana-node` es reutilizable. Puedes desplegar N nodos cambiando `node_count`.
+1. **Modularization:** The `solana-node` module is reusable. You can deploy N nodes by changing `node_count`.
 
-2. **Default Service Account:** Uso la SA por defecto de GCE en lugar de crear una custom. Razón: simplicidad > over-engineering. Para dev nodes, los permisos por defecto son suficientes.
+2. **Default Service Account:** Uses GCE's default SA instead of creating a custom one. Reason: simplicity > over-engineering. For dev nodes, default permissions are sufficient.
 
-3. **Dual SSH Mode:** IAP (seguro) vs directo (rápido). El primero es default, el segundo existe para troubleshooting o entornos donde IAP no está disponible.
+3. **Dual SSH Mode:** IAP (secure) vs direct (fast). The first is default, the second exists for troubleshooting or environments where IAP isn't available.
 
-4. **Startup Script Idempotente:** Todo el tuning se aplica en boot. Si la instancia se recrea, el entorno es idéntico.
+4. **Idempotent Startup Script:** All tuning is applied on boot. If the instance is recreated, the environment is identical.
 
 ---
 
-## Especificaciones Técnicas
+## Technical Specifications
 
-| Componente | Configuración | Justificación |
-|------------|---------------|---------------|
-| **Compute** | `n2-standard-16` (16 vCPU, 64GB RAM) | Mínimo para test-validator sin lag |
-| **Storage** | 500GB SSD (`pd-ssd`) | IOPS consistente para ledger I/O |
-| **OS** | Ubuntu 22.04 LTS | Soporte largo + compatibilidad Solana |
-| **Región** | `europe-southwest1` (Madrid) | Diversificación geográfica EU |
+| Component | Configuration | Justification |
+|-----------|---------------|---------------|
+| **Compute** | `n2-standard-16` (16 vCPU, 64GB RAM) | Minimum for test-validator without lag |
+| **Storage** | 500GB SSD (`pd-ssd`) | Consistent IOPS for ledger I/O |
+| **OS** | Ubuntu 22.04 LTS | Long support + Solana compatibility |
+| **Region** | `europe-southwest1` (Madrid) | EU geographic diversification |
 
-### Kernel Tuning (crítico para Solana)
+### Kernel Tuning (critical for Solana)
 
 ```bash
 net.core.rmem_max=134217728          # UDP RX buffer: 128MB
 net.core.wmem_max=134217728          # UDP TX buffer: 128MB
-vm.max_map_count=1000000             # Memory maps para ledger
+vm.max_map_count=1000000             # Memory maps for ledger
 nofile=1000000                       # File descriptors
 ```
 
-**Por qué:** El protocolo Solana usa UDP para gossip/TPU. Buffers pequeños = packet loss = degradación de red.
+**Why:** Solana protocol uses UDP for gossip/TPU. Small buffers = packet loss = network degradation.
 
-### Stack Completo
+### Complete Stack
 
-- **Rust** (stable): Compilador para programas Solana
-- **Solana CLI** (stable): Herramientas de línea de comandos
-- **Anchor Framework** (latest): Framework de desarrollo más usado
-- **Node.js 20 LTS + Yarn**: Para tests de integración
-- **Utilidades:** jq (JSON parsing), fio (disk benchmarking)
+- **Rust** (stable): Compiler for Solana programs
+- **Solana CLI** (stable): Command-line tools
+- **Anchor Framework** (latest): Most used development framework
+- **Node.js 20 LTS + Yarn**: For integration tests
+- **Utilities:** jq (JSON parsing), fio (disk benchmarking)
 
 ---
 
-## Prerrequisitos
+## Prerequisites
 
-Necesitas tres cosas:
+You need three things:
 
-1. **Proyecto GCP activo** con billing habilitado
-2. **gcloud CLI** autenticado:
+1. **Active GCP project** with billing enabled
+2. **gcloud CLI** authenticated:
    ```bash
    gcloud auth login
    gcloud config set project YOUR_PROJECT_ID
    ```
 3. **Terraform** >= 1.8.5
 
-Las APIs necesarias (Compute Engine, IAP) se habilitan automáticamente.
+Required APIs (Compute Engine, IAP) are enabled automatically.
 
-**Versiones fijadas:**
-- Terraform: `>= 1.8.5` (compatible con versiones superiores)
-- Google Provider: `~> 7.16` (7.16.x, patches automáticos, sin breaking changes)
+**Pinned versions:**
+- Terraform: `>= 1.8.5` (compatible with higher versions)
+- Google Provider: `~> 7.16` (7.16.x, automatic patches, no breaking changes)
 
 ---
 
-## Inicio Rápido
+## Quick Start
 
-### Primera vez (flujo guiado paso a paso)
+### First time (step-by-step guided flow)
 
-El Makefile te guía en todo el proceso. Si nunca has usado Terraform o GCP, simplemente ejecuta:
+The Makefile guides you through the entire process. If you've never used Terraform or GCP, simply run:
 
 ```bash
-git clone https://github.com/TU_USUARIO/solana-gcp-node
+git clone https://github.com/YOUR_USERNAME/solana-gcp-node
 cd solana-gcp-node
 
-# Ver ayuda completa
+# View complete help
 make help
 
-# Paso 1: Verificar que tienes todo instalado
+# Step 1: Verify you have everything installed
 make check
 
-# Paso 2: Configurar tu proyecto GCP
+# Step 2: Configure your GCP project
 export TF_VAR_project_id="your-gcp-project"
 make init
 
-# Paso 3: Desplegar (crea VPC, firewall, nodo Solana)
+# Step 3: Deploy (creates VPC, firewall, Solana node)
 make deploy
 ```
 
-**¿Qué se crea?**
-- VPC dedicada (`10.0.0.0/24`)
-- Firewall rules (SSH via IAP, RPC/WS abiertos)
-- 1 nodo Solana con 64GB RAM, 500GB SSD
+**What gets created?**
+- Dedicated VPC (`10.0.0.0/24`)
+- Firewall rules (SSH via IAP, RPC/WS open)
+- 1 Solana node with 64GB RAM, 500GB SSD
 
-**Tiempo:** ~2 minutos infraestructura + ~8-10 minutos instalación de software
+**Time:** ~2 minutes infrastructure + ~8-10 minutes software installation
 
-### Monitorear el progreso
+### Monitor progress
 
-Mientras el nodo se configura:
+While the node configures:
 
 ```bash
-# Ver logs de instalación en tiempo real
+# View installation logs in real-time
 make logs
 
-# Ver estado del nodo
+# View node status
 make status
 ```
 
-### Verificar que todo funciona
+### Verify everything works
 
 ```bash
 make smoke-test
 ```
 
-Esto valida:
-- ✓ Rust, Solana CLI, Anchor instalados
-- ✓ Kernel tuning aplicado (UDP buffers, file limits)
-- ✓ `solana-test-validator` arranca y responde
-- ✓ Airdrop funciona
+This validates:
+- Rust, Solana CLI, Anchor installed
+- Kernel tuning applied (UDP buffers, file limits)
+- `solana-test-validator` starts and responds
+- Airdrop works
 
-### Conectar al nodo
+### Connect to the node
 
 ```bash
 make ssh
 ```
 
-Usa IAP tunnel (seguro, zero-config).
+Uses IAP tunnel (secure, zero-config).
 
 ---
 
-## Configuración Avanzada
+## Advanced Configuration
 
-### Desplegar múltiples nodos
+### Deploy multiple nodes
 
 ```bash
 export TF_VAR_node_count=3
 make deploy
 ```
 
-Los nodos se nombran `solana-dev-node-00`, `solana-dev-node-01`, etc.
+Nodes are named `solana-dev-node-00`, `solana-dev-node-01`, etc.
 
-Ver todos los nodos:
+View all nodes:
 
 ```bash
 terraform output nodes
 ```
 
-Conectar a un nodo específico:
+Connect to a specific node:
 
 ```bash
 make ssh NODE=solana-dev-node-02
 ```
 
-### SSH abierto (desarrollo rápido)
+### Open SSH (fast development)
 
-Si IAP te genera fricción (debugging, CI/CD, etc.), puedes usar SSH directo:
+If IAP creates friction (debugging, CI/CD, etc.), you can use direct SSH:
 
 ```bash
 export TF_VAR_enable_iap_ssh=false
 make deploy
 ```
 
-**Advertencia:** Esto expone puerto 22 a internet. Solo para desarrollo temporal.
+**Warning:** This exposes port 22 to the internet. Only for temporary development.
 
-Para restringir a tu IP:
+To restrict to your IP:
 
 ```bash
 export TF_VAR_enable_iap_ssh=false
@@ -204,7 +204,7 @@ export TF_VAR_allowed_ssh_cidrs='["203.0.113.42/32"]'
 make deploy
 ```
 
-### Cambiar región/máquina
+### Change region/machine
 
 ```bash
 export TF_VAR_region="us-central1"
@@ -215,194 +215,185 @@ make deploy
 
 ---
 
-## Comandos Disponibles
+## Available Commands
 
-### Primeros Pasos
-| Comando | Descripción |
+### Getting Started
+| Command | Description |
 |---------|-------------|
-| `make help` | Muestra ayuda completa con guía paso a paso |
-| `make check` | Verifica prerrequisitos (Terraform, gcloud) |
-| `make init` | Configura proyecto GCP e inicializa Terraform |
-| `make plan` | Previsualiza cambios sin aplicarlos |
-| `make deploy` | Despliega infraestructura completa |
+| `make help` | Shows complete help with step-by-step guide |
+| `make check` | Verifies prerequisites (Terraform, gcloud) |
+| `make init` | Configures GCP project and initializes Terraform |
+| `make plan` | Previews changes without applying them |
+| `make deploy` | Deploys complete infrastructure |
 
-### Monitoreo
-| Comando | Descripción |
+### Monitoring
+| Command | Description |
 |---------|-------------|
-| `make status` | Lista todos los nodos con estado e IPs |
-| `make logs` | Ver logs de instalación en tiempo real |
-| `make smoke-test` | Ejecuta validación end-to-end |
+| `make status` | Lists all nodes with status and IPs |
+| `make logs` | View installation logs in real-time |
+| `make smoke-test` | Runs end-to-end validation |
 
-### Acceso
-| Comando | Descripción |
+### Access
+| Command | Description |
 |---------|-------------|
-| `make ssh` | Conecta al primer nodo |
-| `make ssh NODE=solana-dev-node-01` | Conecta a nodo específico |
+| `make ssh` | Connects to first node |
+| `make ssh NODE=solana-dev-node-01` | Connects to specific node |
 
-### Limpieza
-| Comando | Descripción |
+### Cleanup
+| Command | Description |
 |---------|-------------|
-| `make destroy` | Elimina toda la infraestructura (pide confirmación) |
-| `make clean` | Limpia archivos temporales de Terraform |
+| `make destroy` | Removes all infrastructure (asks for confirmation) |
+| `make clean` | Cleans Terraform temporary files |
 
 ---
 
-## Seguridad
+## Security
 
-### Modelo de amenazas
+### Threat Model
 
-Este blueprint está diseñado para **entornos de desarrollo**, no producción. Asunciones:
+This blueprint is designed for **development environments**, not production. Assumptions:
 
-- **Nodos efímeros:** Se crean/destruyen frecuentemente
-- **Sin datos sensibles:** No hay claves privadas de mainnet
-- **Red pública:** RPC/WS necesitan ser accesibles desde internet para desarrollo
+- **Ephemeral nodes:** Created/destroyed frequently
+- **No sensitive data:** No mainnet private keys
+- **Public network:** RPC/WS need to be accessible from internet for development
 
-### SSH: Dos modos
+### SSH: Two modes
 
-| Modo | Configuración | Cuándo usarlo |
-|------|---------------|---------------|
-| **IAP (default)** | `enable_iap_ssh=true` | Desarrollo normal, demos, ambientes compartidos |
-| **Directo** | `enable_iap_ssh=false` | Debugging, CI/CD, troubleshooting |
+| Mode | Configuration | When to use |
+|------|---------------|-------------|
+| **IAP (default)** | `enable_iap_ssh=true` | Normal development, demos, shared environments |
+| **Direct** | `enable_iap_ssh=false` | Debugging, CI/CD, troubleshooting |
 
 **IAP (Identity-Aware Proxy):**
-- Puerto 22 **no expuesto** a internet
-- Requiere autenticación GCP
-- `gcloud compute ssh` maneja el tunnel automáticamente
-- Zero-config para el usuario
+- Port 22 **not exposed** to internet
+- Requires GCP authentication
+- `gcloud compute ssh` handles tunnel automatically
+- Zero-config for user
 
-**SSH directo:**
-- Puerto 22 abierto (configurable via `allowed_ssh_cidrs`)
-- Útil cuando IAP no está disponible
-- **Solo para desarrollo temporal**
+**Direct SSH:**
+- Port 22 open (configurable via `allowed_ssh_cidrs`)
+- Useful when IAP isn't available
+- **Only for temporary development**
 
 ### RPC/WebSocket
 
-Puertos 8899/8900 están abiertos a `0.0.0.0/0` en ambos modos. Esto es intencional para facilitar desarrollo.
+Ports 8899/8900 are open to `0.0.0.0/0` in both modes. This is intentional to facilitate development.
 
-**Para producción:** Usa Cloud Armor, VPC peering, o VPN.
+**For production:** Use Cloud Armor, VPC peering, or VPN.
 
 ### Service Account
 
-Uso la **default compute service account** en lugar de crear una custom. Razones:
+Uses **default compute service account** instead of creating a custom one. Reasons:
 
-1. **Simplicidad:** Menos recursos que gestionar
-2. **Permisos suficientes:** Para dev nodes, los permisos por defecto cubren todo (Compute, Logging, Monitoring)
-3. **Menos fricción:** No requiere IAM bindings adicionales
+1. **Simplicity:** Fewer resources to manage
+2. **Sufficient permissions:** For dev nodes, default permissions cover everything (Compute, Logging, Monitoring)
+3. **Less friction:** No additional IAM bindings required
 
-Si necesitas permisos custom, modifica `terraform_modules/solana-node/main.tf`.
+If you need custom permissions, modify `terraform_modules/solana-node/main.tf`.
 
 ---
 
 ## Smoke Test
 
-Script de validación que ejecuta:
+Validation script that runs:
 
 ```bash
-1. Verificar versiones (Rust, Solana, Anchor, Node)
-2. Validar kernel tuning (UDP buffers >= 128MB)
-3. Arrancar test-validator
-4. Esperar RPC ready (max 30s)
-5. Airdrop 5 SOL a keypair temporal
+1. Verify versions (Rust, Solana, Anchor, Node)
+2. Validate kernel tuning (UDP buffers >= 128MB)
+3. Start test-validator
+4. Wait for RPC ready (max 30s)
+5. Airdrop 5 SOL to temporary keypair
 6. Cleanup
 ```
 
-Si falla, revisa `/var/log/solana-setup.log` en la instancia.
+If it fails, check `/var/log/solana-setup.log` on the instance.
 
 ---
 
-## Estructura del Proyecto
+## Project Structure
 
 ```
 .
-├── main.tf                          # Orquestador principal
-├── variables.tf                     # Configuración
-├── outputs.tf                       # Info post-deploy
-├── Makefile                         # Comandos helper
+├── main.tf                          # Main orchestrator
+├── variables.tf                     # Configuration
+├── outputs.tf                       # Post-deploy info
+├── Makefile                         # Helper commands
 ├── terraform_modules/
-│   └── solana-node/                 # Módulo reutilizable
+│   └── solana-node/                 # Reusable module
 │       ├── main.tf
 │       ├── variables.tf
 │       └── outputs.tf
 └── scripts/
-    └── setup-solana.sh              # Startup script (175 líneas)
+    └── setup-solana.sh              # Startup script (175 lines)
 ```
 
-**Filosofía:** Modularidad sin over-engineering. El módulo `solana-node` es reutilizable pero simple.
+**Philosophy:** Modularity without over-engineering. The `solana-node` module is reusable but simple.
 
 ---
 
 ## Troubleshooting
 
-### El startup script falla
+### Startup script fails
 
 ```bash
-# Ver logs completos
+# View complete logs
 make logs
 
-# SSH y revisar manualmente
+# SSH and check manually
 make ssh
 tail -f /var/log/solana-setup.log
 ```
 
-Causas comunes:
-- Timeout descargando Rust/Solana (red lenta)
-- Anchor build falla (falta memoria - usa `n2-standard-16` mínimo)
+Common causes:
+- Timeout downloading Rust/Solana (slow network)
+- Anchor build fails (insufficient memory - use `n2-standard-16` minimum)
 
-### IAP no funciona
+### IAP doesn't work
 
 ```bash
-# Verificar que la API está habilitada
+# Verify API is enabled
 gcloud services list --enabled | grep iap
 
-# Si no, habilitar manualmente
+# If not, enable manually
 gcloud services enable iap.googleapis.com
 ```
 
-### Quiero cambiar de IAP a SSH directo (o viceversa)
+### I want to switch from IAP to direct SSH (or vice versa)
 
 ```bash
-export TF_VAR_enable_iap_ssh=false  # o true
+export TF_VAR_enable_iap_ssh=false  # or true
 terraform apply
 ```
 
-Terraform actualizará solo el firewall rule.
+Terraform will update only the firewall rule.
 
 ---
 
-## Costos Estimados
+## Estimated Costs
 
-Basado en `n2-standard-16` en `europe-southwest1`:
+Based on `n2-standard-16` in `europe-southwest1`:
 
-| Recurso | Coste/hora | Coste/mes (730h) |
-|---------|------------|------------------|
+| Resource | Cost/hour | Cost/month (730h) |
+|----------|-----------|-------------------|
 | Compute (n2-standard-16) | ~$0.78 | ~$569 |
 | Storage (500GB SSD) | ~$0.023 | ~$17 |
 | **Total** | **~$0.80** | **~$586** |
 
-**Tip:** Usa `make destroy` cuando no estés desarrollando. Recrear el nodo tarda 10 minutos.
+**Tip:** Use `make destroy` when not developing. Recreating the node takes 10 minutes.
 
 ---
 
-## Roadmap
-
-- [ ] Cloud Monitoring dashboards (CPU, disk, network)
-- [ ] Soporte para snapshots automáticos
-- [ ] Opción de disco NVMe local (mayor IOPS)
-- [ ] Multi-región (HA setup)
-
----
-
-## Licencia
+## License
 
 MIT
 
 ---
 
-## Autor
+## Author
 
-Desarrollado por un CTO con 9 años de experiencia en infraestructura cloud y blockchain. 
+@abejaranog
 
-Si este proyecto te ahorra tiempo, considera:
-- ⭐ Star en GitHub
-- � Reportar issues
-- 🔧 Contribuir mejoras
+If this project saves you time, consider:
+- Star on GitHub
+- Report issues
+- Contribute improvements
