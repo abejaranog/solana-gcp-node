@@ -1,49 +1,49 @@
 variable "project_id" {
-  description = "ID del proyecto de Google Cloud"
+  description = "Google Cloud project ID"
   type        = string
 }
 
 variable "region" {
-  description = "Región de GCP"
+  description = "GCP region"
   type        = string
 }
 
 variable "zone" {
-  description = "Zona de GCP"
+  description = "GCP zone"
   type        = string
 }
 
 variable "network_name" {
-  description = "Nombre de la VPC"
+  description = "VPC name"
   type        = string
 }
 
 variable "subnet_name" {
-  description = "Nombre de la subnet"
+  description = "Subnet name"
   type        = string
 }
 
 variable "subnet_cidr" {
-  description = "CIDR de la subnet"
+  description = "Subnet CIDR"
   type        = string
 }
 
 variable "node_name" {
-  description = "Nombre del nodo"
+  description = "Node name"
   type        = string
 }
 
 variable "machine_type" {
-  description = "Tipo de máquina"
+  description = "Machine type"
   type        = string
 }
 
 variable "enable_iap_ssh" {
-  description = "Habilitar SSH via IAP"
+  description = "Enable SSH via IAP"
   type        = bool
 }
 
 variable "allowed_ssh_cidrs" {
-  description = "CIDRs permitidos para SSH cuando IAP está deshabilitado"
+  description = "Allowed CIDRs for SSH when IAP is disabled"
   type        = list(string)
 }

@@ -1,20 +1,20 @@
-# Ejemplo de configuración - Copia este archivo a terraform.tfvars y personaliza
+# Configuration example - Copy this file to terraform.tfvars and customize
 
-# REQUERIDO: Tu proyecto de GCP
+# REQUIRED: Your GCP project
 project_id = "your-gcp-project-id"
 
-# Región y zona (default: Madrid)
+# Region and zone (default: Madrid)
 # region = "europe-southwest1"
 # zone   = "europe-southwest1-a"
 
-# Tipo de máquina (default: n2-standard-16 = 64GB RAM)
+# Machine type (default: n2-standard-16 = 64GB RAM)
 # machine_type = "n2-standard-16"
 
-# Número de nodos a desplegar (default: 1)
+# Number of nodes to deploy (default: 1)
 # node_count = 1
 
-# SSH seguro via IAP (default: true)
+# Secure SSH via IAP (default: true)
 # enable_iap_ssh = true
 
-# CIDRs permitidos para SSH cuando enable_iap_ssh=false
+# Allowed CIDRs for SSH when enable_iap_ssh=false
 # allowed_ssh_cidrs = ["0.0.0.0/0"]
