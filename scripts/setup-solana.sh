@@ -58,34 +58,36 @@ sudo apt-get install -y \
 echo "[OK] Dependencies installed"
 
 # === 3. RUST ===
-echo "--- [3/7] Instalando Rust ---"
+echo "--- [3/7] Installing Rust ---"
 
-sudo -u ubuntu bash -c 'curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y'
-sudo -u ubuntu bash -c 'source $HOME/.cargo/env && rustup component add rustfmt clippy'
+# Install Rust globally in /opt/rust
+mkdir -p /opt/rust
+export RUSTUP_HOME=/opt/rust/rustup
+export CARGO_HOME=/opt/rust/cargo
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --no-modify-path --default-toolchain stable
 
-# Add Rust to global PATH
-cat <<'RUSTEOF' | sudo tee -a /etc/bash.bashrc
-# Rust environment
-export PATH="/home/ubuntu/.cargo/bin:$PATH"
-RUSTEOF
+# Set default toolchain and add components
+export PATH="/opt/rust/cargo/bin:$PATH"
+rustup default stable
+rustup component add rustfmt clippy
 
-echo "[OK] Rust installed"
+# Set permissions for all users
+chmod -R 755 /opt/rust
+
+echo "[OK] Rust installed in /opt/rust"
 
 # === 4. SOLANA CLI ===
-echo "--- [4/7] Instalando Solana CLI ---"
+echo "--- [4/7] Installing Solana CLI ---"
 
-sudo -u ubuntu bash -c 'sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"'
+# Download and extract Solana directly to /opt/solana
+mkdir -p /opt/solana/bin
+SOLANA_VERSION="stable"
+curl -sSfL "https://release.anza.xyz/${SOLANA_VERSION}/solana-release-x86_64-unknown-linux-gnu.tar.bz2" | tar -xjf - -C /opt/solana --strip-components=1
 
-# Add Solana to global PATH (for all users)
-cat <<'SOLEOF' | sudo tee -a /etc/bash.bashrc
-# Solana CLI
-export PATH="/home/ubuntu/.local/share/solana/install/active_release/bin:$PATH"
-SOLEOF
+# Set permissions for all users
+chmod -R 755 /opt/solana
 
-# Also add to ubuntu user's .bashrc for immediate use
-echo 'export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"' | sudo -u ubuntu tee -a /home/ubuntu/.bashrc
-
-echo "[OK] Solana CLI installed"
+echo "[OK] Solana CLI installed in /opt/solana"
 
 # === 5. NODE.JS + YARN ===
 echo "--- [5/7] Instalando Node.js y Yarn ---"
@@ -97,18 +99,84 @@ sudo npm install --global yarn
 echo "[OK] Node.js and Yarn installed"
 
 # === 6. ANCHOR FRAMEWORK ===
-echo "--- [6/7] Instalando Anchor Framework ---"
+echo "--- [6/7] Installing Anchor Framework ---"
 
-sudo -u ubuntu bash -c 'source $HOME/.cargo/env && cargo install --git https://github.com/coral-xyz/anchor avm --locked --force'
-sudo -u ubuntu bash -c 'source $HOME/.cargo/env && avm install latest && avm use latest'
+# Install Anchor using the global Cargo with AVM_HOME in /opt
+export PATH="/opt/solana/bin:/opt/rust/cargo/bin:$PATH"
+export RUSTUP_HOME=/opt/rust/rustup
+export CARGO_HOME=/opt/rust/cargo
+export AVM_HOME=/opt/avm
 
-# Add Anchor/AVM to global PATH
-cat <<'ANCHOREOF' | sudo tee -a /etc/bash.bashrc
-# Anchor Framework
-export PATH="/home/ubuntu/.avm/bin:$PATH"
-ANCHOREOF
+# Create /opt/avm directory
+mkdir -p /opt/avm
 
-echo "[OK] Anchor installed"
+# Install anchor-cli using cargo install (robust and reliable)
+echo "Installing anchor-cli using cargo install..."
+
+# Install anchor-cli directly in /opt/avm using cargo install --root
+cargo install --git https://github.com/coral-xyz/anchor anchor-cli --locked --force --root /opt/avm
+
+# Set permissions for /opt/avm
+chmod -R 755 /opt/avm
+
+# Verify anchor binary exists
+if [ ! -f "/opt/avm/bin/anchor" ]; then
+    echo "  [ERROR] Could not find anchor binary in /opt/avm/bin"
+    ls -la /opt/avm/bin/ || echo "  /opt/avm/bin/ is empty"
+    exit 1
+fi
+
+# Remove the symlink in /opt/rust/cargo/bin if it exists
+if [ -L "/opt/rust/cargo/bin/anchor" ]; then
+    rm /opt/rust/cargo/bin/anchor
+fi
+
+# Create a symlink in /opt/rust/cargo/bin for convenience
+ln -sf /opt/avm/bin/anchor /opt/rust/cargo/bin/anchor
+
+echo "[OK] Anchor installed and accessible in /opt/avm/bin"
+
+# Set permissions for all Rust/Cargo binaries
+chmod -R 755 /opt/rust/cargo/bin
+
+# Make /home/ubuntu accessible for OS Login users to run smoke test
+chmod 755 /home/ubuntu
+
+# === GLOBAL PATH CONFIGURATION ===
+# Add /opt directories to global PATH for all users
+# Binaries stay in /opt with all their dependencies
+
+echo "Configuring global PATH for all users..."
+
+# Update /etc/environment (loaded by PAM for all users including SSH)
+# This is the ONLY reliable way to set PATH for OS Login users
+cat > /etc/environment << 'ENVFILE'
+PATH="/opt/solana/bin:/opt/rust/cargo/bin:/opt/avm/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/snap/bin"
+RUSTUP_HOME="/opt/rust/rustup"
+CARGO_HOME="/opt/rust/cargo"
+ENVFILE
+
+# Also add to /etc/profile.d for login shells (belt and suspenders)
+cat > /etc/profile.d/solana-dev.sh << 'PROFILEENV'
+export RUSTUP_HOME=/opt/rust/rustup
+export CARGO_HOME=/opt/rust/cargo
+export PATH="/opt/solana/bin:/opt/rust/cargo/bin:/opt/avm/bin:$PATH"
+PROFILEENV
+chmod +x /etc/profile.d/solana-dev.sh
+
+# Add to /etc/bash.bashrc for non-login interactive shells
+cat >> /etc/bash.bashrc << 'BASHENV'
+
+# Solana development environment
+export RUSTUP_HOME=/opt/rust/rustup
+export CARGO_HOME=/opt/rust/cargo
+export PATH="/opt/solana/bin:/opt/rust/cargo/bin:/opt/avm/bin:$PATH"
+BASHENV
+
+echo "[OK] Global PATH configured in:"
+echo "    - /etc/environment (PAM/all users)"
+echo "    - /etc/profile.d (login shells)"
+echo "    - /etc/bash.bashrc (interactive shells)"
 
 # === 7. SMOKE TEST SCRIPT ===
 echo "--- [7/7] Configuring Smoke Test ---"
@@ -117,8 +185,9 @@ cat <<'EOF' > /home/ubuntu/run-smoke-test.sh
 #!/bin/bash
 set -e
 
-export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-source "$HOME/.cargo/env"
+# Load global environment
+export AVM_HOME=/opt/avm
+source /etc/profile.d/solana-dev.sh 2>/dev/null || true
 
 echo "=========================================="
 echo "   SOLANA NODE SMOKE TEST"
@@ -182,6 +251,75 @@ EOF
 
 chmod +x /home/ubuntu/run-smoke-test.sh
 chown ubuntu:ubuntu /home/ubuntu/run-smoke-test.sh
+
+# === 8. VALIDATION TEST ===
+echo "--- [8/8] Validating installation for all users ---"
+
+# Test that binaries work for non-root user (ubuntu)
+echo "Testing binaries as non-root user..."
+
+# Create a test user to simulate OS Login (fresh user with no custom config)
+echo "Creating test user to simulate OS Login..."
+useradd -m -s /bin/bash oslogin_test_user 2>/dev/null || true
+
+# Test 1: Direct binary execution (no PATH needed)
+echo "Test 1: Direct binary execution..."
+if /opt/solana/bin/solana --version >/dev/null 2>&1; then
+    echo "  [OK] /opt/solana/bin/solana executable"
+else
+    echo "  [ERROR] /opt/solana/bin/solana NOT executable"
+    ls -la /opt/solana/bin/solana
+    exit 1
+fi
+
+if /opt/rust/cargo/bin/cargo --version >/dev/null 2>&1; then
+    echo "  [OK] /opt/rust/cargo/bin/cargo executable"
+else
+    echo "  [ERROR] /opt/rust/cargo/bin/cargo NOT executable"
+    ls -la /opt/rust/cargo/bin/cargo
+    exit 1
+fi
+
+if /opt/rust/cargo/bin/anchor --version >/dev/null 2>&1; then
+    echo "  [OK] /opt/rust/cargo/bin/anchor executable"
+else
+    echo "  [ERROR] /opt/rust/cargo/bin/anchor NOT executable"
+    echo "  DEBUG: Listing /opt/rust/cargo/bin/anchor:"
+    ls -la /opt/rust/cargo/bin/anchor
+    echo "  DEBUG: Listing /root/.avm/bin/:"
+    ls -la /root/.avm/bin/ || echo "  /root/.avm/bin/ not found"
+    exit 1
+fi
+
+# Test 2: Test as fresh user with login shell (simulates SSH)
+echo "Test 2: Testing as fresh user (simulating OS Login SSH)..."
+if sudo -u oslogin_test_user bash -l -c 'solana --version' >/dev/null 2>&1; then
+    echo "  [OK] solana accessible via PATH for new user"
+else
+    echo "  [ERROR] solana NOT in PATH for new user"
+    echo "  DEBUG: User PATH is:"
+    sudo -u oslogin_test_user bash -l -c 'echo $PATH'
+    exit 1
+fi
+
+if sudo -u oslogin_test_user bash -l -c 'cargo --version' >/dev/null 2>&1; then
+    echo "  [OK] cargo accessible via PATH for new user"
+else
+    echo "  [ERROR] cargo NOT in PATH for new user"
+    exit 1
+fi
+
+if sudo -u oslogin_test_user bash -l -c 'anchor --version' >/dev/null 2>&1; then
+    echo "  [OK] anchor accessible via PATH for new user"
+else
+    echo "  [ERROR] anchor NOT in PATH for new user"
+    exit 1
+fi
+
+# Cleanup test user
+userdel -r oslogin_test_user 2>/dev/null || true
+
+echo "[OK] All binaries accessible to all users"
 
 # === FINALIZATION ===
 echo ""
