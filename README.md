@@ -82,18 +82,44 @@ nofile=1000000                       # File descriptors
 You need three things:
 
 1. **Active GCP project** with billing enabled
-2. **gcloud CLI** authenticated:
-   ```bash
-   gcloud auth login
-   gcloud config set project YOUR_PROJECT_ID
-   ```
-3. **Terraform** >= 1.8.5
+2. **Terraform** >= 1.8.5
+3. **gcloud CLI** authenticated
+
+### Quick Installation
+
+If you don't have Terraform or gcloud CLI installed:
+
+```bash
+# Automatically install both (macOS/Linux)
+make install
+```
+
+This will:
+- Install Terraform via Homebrew (macOS) or apt (Linux)
+- Install gcloud CLI via Homebrew (macOS) or official installer (Linux)
+
+### Manual Installation
+
+Or install manually:
+- **Terraform**: https://www.terraform.io/downloads
+- **gcloud CLI**: https://cloud.google.com/sdk/docs/install
+
+### Authentication
+
+After installation, authenticate:
+```bash
+gcloud auth login
+gcloud config set project YOUR_PROJECT_ID
+gcloud auth application-default login
+```
 
 Required APIs (Compute Engine, IAP) are enabled automatically.
 
 **Pinned versions:**
 - Terraform: `>= 1.8.5` (compatible with higher versions)
 - Google Provider: `~> 7.16` (7.16.x, automatic patches, no breaking changes)
+
+**Note:** The `gcloud auth application-default login` command is required for Terraform to authenticate with GCP. The `make init` command will prompt you for this if not already configured.
 
 ---
 
@@ -109,6 +135,9 @@ cd solana-gcp-node
 
 # View complete help
 make help
+
+# Step 0: Install prerequisites (if needed)
+make install
 
 # Step 1: Verify you have everything installed
 make check
@@ -221,6 +250,7 @@ make deploy
 | Command | Description |
 |---------|-------------|
 | `make help` | Shows complete help with step-by-step guide |
+| `make install` | Installs Terraform and gcloud CLI (macOS/Linux) |
 | `make check` | Verifies prerequisites (Terraform, gcloud) |
 | `make init` | Configures GCP project and initializes Terraform |
 | `make plan` | Previews changes without applying them |
@@ -339,6 +369,24 @@ If it fails, check `/var/log/solana-setup.log` on the instance.
 # View complete logs
 make logs
 
+# Example output:
+--- [1/8] Installing Rust...
+  [OK] Rust installed in /opt/rust
+--- [2/8] Installing Solana CLI...
+  [OK] Solana CLI installed in /opt/solana
+--- [3/8] Installing Node.js and Yarn...
+  [OK] Node.js and Yarn installed
+--- [4/8] Installing Anchor Framework...
+  [OK] Anchor installed and accessible in /opt/avm/bin
+--- [5/8] Configuring global PATH...
+  [OK] Global PATH configured
+--- [6/8] Configuring Smoke Test...
+--- [7/8] Validating installation...
+  [OK] All binaries accessible to all users
+========================================
+   SETUP COMPLETE
+========================================
+
 # SSH and check manually
 make ssh
 tail -f /var/log/solana-setup.log
@@ -347,6 +395,39 @@ tail -f /var/log/solana-setup.log
 Common causes:
 - Timeout downloading Rust/Solana (slow network)
 - Anchor build fails (insufficient memory - use `n2-standard-16` minimum)
+
+### Smoke test validation
+
+```bash
+# Run end-to-end validation
+make smoke-test
+
+# Example output:
+==========================================
+   SOLANA NODE SMOKE TEST
+==========================================
+
+[1/5] Verificando instalaciones...
+  Rust: rustc 1.93.0 (254b59607 2026-01-19)
+  Solana: solana-cli 3.0.13 (src:90098d26; feat:3604001754, client:Agave)
+  Anchor: anchor-cli 0.32.1
+  Node: v20.20.0
+
+[2/5] Verificando kernel tuning...
+  [OK] UDP buffers: 134217728 bytes
+
+[3/5] Iniciando test-validator...
+  [OK] Validator responding on attempt 1
+
+[4/5] Probando airdrop...
+  [OK] Airdrop successful: 5 SOL
+
+[5/5] Limpiando...
+
+==========================================
+   [PASSED] SMOKE TEST PASSED
+==========================================
+```
 
 ### IAP doesn't work
 

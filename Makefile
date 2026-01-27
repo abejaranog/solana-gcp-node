@@ -1,11 +1,12 @@
 # Makefile - Solana GCP Node Blueprint
 # Step-by-step guide for users without infrastructure experience
 
-.PHONY: help init check deploy plan destroy ssh logs smoke-test status clean
+.PHONY: help install init check deploy plan destroy ssh logs smoke-test status clean
 
 # Variables (you can override: make ssh NODE=solana-dev-node-01)
 ZONE ?= europe-southwest1-a
 NODE ?= solana-dev-node-00
+TERRAFORM_VERSION ?= 1.8.5
 
 # Colors for messages
 GREEN  := \033[0;32m
@@ -26,6 +27,7 @@ help:
 	@echo ""
 	@echo "$(GREEN)FIRST STEPS (run in order):$(NC)"
 	@echo ""
+	@echo "  0. $(YELLOW)make install$(NC)    - Install Terraform and gcloud CLI (if needed)"
 	@echo "  1. $(YELLOW)make check$(NC)      - Verify you have everything installed"
 	@echo "  2. $(YELLOW)make init$(NC)       - Configure your GCP project"
 	@echo "  3. $(YELLOW)make plan$(NC)       - Preview what will be created (optional)"
@@ -52,6 +54,53 @@ help:
 	@echo "  - Node takes ~8-10 minutes to be ready after deploy"
 	@echo "  - Use 'make logs' to view installation progress"
 	@echo "  - Remember to run 'make destroy' when done to avoid costs"
+	@echo ""
+
+#==============================================================================
+# INSTALLATION OF PREREQUISITES
+#==============================================================================
+
+install:
+	@echo ""
+	@echo "$(BLUE)Installing prerequisites...$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Detecting operating system...$(NC)"
+	@echo "$(YELLOW)Target Terraform version: $(TERRAFORM_VERSION)$(NC)"
+	@echo ""
+	@OS=$$(uname -s); \
+	if [ "$$OS" = "Darwin" ]; then \
+		echo "$(GREEN)macOS detected$(NC)"; \
+		if ! command -v brew >/dev/null 2>&1; then \
+			echo "$(RED)[ERROR] Homebrew not found$(NC)"; \
+			echo "Install Homebrew first: https://brew.sh"; \
+			exit 1; \
+		fi; \
+		echo "$(BLUE)Installing Terraform $(TERRAFORM_VERSION)...$(NC)"; \
+		brew tap hashicorp/tap 2>/dev/null || true; \
+		brew install hashicorp/tap/terraform@$(TERRAFORM_VERSION) 2>/dev/null || brew install hashicorp/tap/terraform; \
+		echo "$(BLUE)Installing gcloud CLI...$(NC)"; \
+		brew install --cask google-cloud-sdk || brew upgrade google-cloud-sdk; \
+	elif [ "$$OS" = "Linux" ]; then \
+		echo "$(GREEN)Linux detected$(NC)"; \
+		echo "$(BLUE)Installing Terraform $(TERRAFORM_VERSION)...$(NC)"; \
+		wget -O /tmp/terraform.zip https://releases.hashicorp.com/terraform/$(TERRAFORM_VERSION)/terraform_$(TERRAFORM_VERSION)_linux_amd64.zip; \
+		sudo unzip -o /tmp/terraform.zip -d /usr/local/bin/; \
+		sudo chmod +x /usr/local/bin/terraform; \
+		rm /tmp/terraform.zip; \
+		echo "$(BLUE)Installing gcloud CLI...$(NC)"; \
+		curl https://sdk.cloud.google.com | bash; \
+		exec -l $$SHELL; \
+	else \
+		echo "$(RED)[ERROR] Unsupported OS: $$OS$(NC)"; \
+		echo "Please install manually:"; \
+		echo "  - Terraform $(TERRAFORM_VERSION): https://www.terraform.io/downloads"; \
+		echo "  - gcloud CLI: https://cloud.google.com/sdk/docs/install"; \
+		exit 1; \
+	fi
+	@echo ""
+	@echo "$(GREEN)[OK] Installation complete$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Next step:$(NC) make check (to verify installation)"
 	@echo ""
 
 #==============================================================================
@@ -97,6 +146,12 @@ init: check
 		exit 1; \
 	fi
 	@echo "$(GREEN)[OK] Project configured:$(NC) $$TF_VAR_project_id"
+	@echo ""
+	@echo "$(BLUE)Configuring Application Default Credentials...$(NC)"
+	@gcloud auth application-default login --quiet 2>/dev/null || \
+		(echo "$(YELLOW)Please authenticate with Application Default Credentials:$(NC)" && \
+		 gcloud auth application-default login)
+	@echo "$(GREEN)[OK] ADC configured$(NC)"
 	@echo ""
 	@echo "$(BLUE)Initializing Terraform...$(NC)"
 	@terraform init -upgrade
@@ -221,8 +276,8 @@ smoke-test:
 	@echo ""
 	@echo "$(BLUE)Running smoke test on $(YELLOW)$(NODE)$(NC)...$(NC)"
 	@echo ""
-	@gcloud compute ssh $(NODE) --zone=$(ZONE) --tunnel-through-iap -- ./run-smoke-test.sh 2>/dev/null || \
-		gcloud compute ssh $(NODE) --zone=$(ZONE) -- ./run-smoke-test.sh 2>/dev/null || \
+	@gcloud compute ssh $(NODE) --zone=$(ZONE) --tunnel-through-iap -- "cd /home/ubuntu && ./run-smoke-test.sh" 2>/dev/null || \
+		gcloud compute ssh $(NODE) --zone=$(ZONE) -- "cd /home/ubuntu && ./run-smoke-test.sh" 2>/dev/null || \
 		(echo "$(RED)[ERROR] Could not run test$(NC)" && \
 		 echo "Verify node is ready: $(GREEN)make logs$(NC)")
 	@echo ""
