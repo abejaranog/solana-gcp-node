@@ -1,22 +1,14 @@
 output "nodes" {
   description = "Information about all deployed nodes"
-  value = {
-    for k, v in module.solana_nodes : k => {
-      name = v.instance_name
-      ip   = v.instance_ip
-      zone = v.instance_zone
-      rpc  = "http://${v.instance_ip}:8899"
-      ws   = "ws://${v.instance_ip}:8900"
-    }
-  }
+  value = module.solana_nodes.instances
 }
 
 output "ssh_commands" {
   description = "SSH commands for each node"
   value = {
-    for k, v in module.solana_nodes : k => var.enable_iap_ssh ? 
-      "gcloud compute ssh ${v.instance_name} --zone=${v.instance_zone} --tunnel-through-iap" : 
-      "gcloud compute ssh ${v.instance_name} --zone=${v.instance_zone}"
+    for k, v in module.solana_nodes.instances : k => var.enable_iap_ssh ? 
+      "gcloud compute ssh ${v.name} --zone=${v.zone} --tunnel-through-iap" : 
+      "gcloud compute ssh ${v.name} --zone=${v.zone}"
   }
 }
 
@@ -28,7 +20,7 @@ output "summary" {
     SOLANA DEV NODES - DEPLOYED
     ========================================
     
-    Nodes deployed: ${var.node_count}
+    Nodes deployed: ${length(module.solana_nodes.instances)}
     SSH Mode: ${var.enable_iap_ssh ? "SECURE (IAP)" : "OPEN"}
     Region: ${var.region}
     

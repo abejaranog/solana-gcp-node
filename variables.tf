@@ -18,7 +18,7 @@ variable "zone" {
 variable "machine_type" {
   description = "Machine type (Solana requires at least 64GB RAM for full validator, 16GB for dev)"
   type        = string
-  default     = "n2-standard-16" # 16 vCPU, 64GB RAM
+  default     = "e2-standard-2" # 16 vCPU, 64GB RAM
 }
 
 variable "enable_iap_ssh" {

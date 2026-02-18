@@ -13,24 +13,29 @@ variable "zone" {
   type        = string
 }
 
-variable "network_name" {
-  description = "VPC name"
-  type        = string
+variable "node_count" {
+  description = "Number of nodes to create"
+  type        = number
+  default     = 1
 }
 
-variable "subnet_name" {
-  description = "Subnet name"
-  type        = string
-}
-
-variable "subnet_cidr" {
-  description = "Subnet CIDR"
-  type        = string
-}
-
-variable "node_name" {
-  description = "Node name"
-  type        = string
+variable "access_config" {
+  description = "Access configuration from main.tf"
+  type = object({
+    teams = map(object({
+      users = list(string)
+    }))
+    services = map(object({
+      enabled = bool
+      description = string
+    }))
+    settings = map(string)
+  })
+  default = {
+    teams = {}
+    services = {}
+    settings = {}
+  }
 }
 
 variable "machine_type" {
