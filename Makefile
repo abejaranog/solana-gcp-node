@@ -1,7 +1,7 @@
 # Makefile - Solana GCP Node Blueprint
 # Step-by-step guide for users without infrastructure experience
 
-.PHONY: help install init check deploy plan destroy ssh logs smoke-test status clean access
+.PHONY: help install init check deploy plan destroy ssh logs smoke-test status clean access stop start
 
 # Variables (you can override: make ssh NODE=solana-dev-node-01)
 ZONE ?= europe-southwest1-a
@@ -33,6 +33,13 @@ help:
 	@echo "  2. $(YELLOW)make init$(NC)       - Configure your GCP project"
 	@echo "  3. $(YELLOW)make plan$(NC)       - Preview what will be created (optional)"
 	@echo "  4. $(YELLOW)make deploy$(NC)     - Deploy nodes (creates teams config if needed)"
+	@echo ""
+	@echo "$(GREEN)NODES ON/OFF (sin borrar):$(NC)"
+	@echo ""
+	@echo "  $(YELLOW)make stop$(NC)         - Apagar nodos (ahorra coste; datos se conservan)"
+	@echo "  $(YELLOW)make start$(NC)        - Encender nodos"
+	@echo "  $(YELLOW)make stop NODE=name$(NC)   - Apagar un nodo concreto"
+	@echo "  $(YELLOW)make start NODE=name$(NC)  - Encender un nodo concreto"
 	@echo ""
 	@echo "$(GREEN)MONITORING:$(NC)"
 	@echo ""
@@ -321,6 +328,66 @@ status:
 		--format="table(name,status,zone,networkInterfaces[0].accessConfigs[0].natIP:label=EXTERNAL_IP)" 2>/dev/null || \
 		(echo "$(YELLOW)No nodes deployed yet.$(NC)" && \
 		 echo "Run: $(GREEN)make deploy$(NC)")
+	@echo ""
+
+#------------------------------------------------------------------------------
+# STOP / START (apagar/encender sin borrar)
+#------------------------------------------------------------------------------
+
+stop:
+	@echo ""
+	@echo "$(YELLOW)Apagando nodo(s)...$(NC)"
+	@echo ""
+	@if [ -n "$(NODE)" ]; then \
+		echo "  Parando $(NODE) en $(ZONE)"; \
+		gcloud compute instances stop $(NODE) --zone=$(ZONE) --quiet 2>/dev/null && \
+			echo "$(GREEN)[OK] $(NODE) apagado$(NC)" || \
+			(echo "$(RED)[ERROR] No se pudo apagar $(NODE)$(NC)" && \
+			 echo "  Comprueba: make status"); \
+	else \
+		COUNT=0; \
+		for name in $$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" 2>/dev/null); do \
+			[ -z "$$name" ] && continue; \
+			echo "  Parando $$name ($(ZONE))"; \
+			gcloud compute instances stop $$name --zone=$(ZONE) --quiet 2>/dev/null && \
+				echo "    $(GREEN)[OK]$$(NC)" || echo "    $(RED)[ERROR]$$(NC)"; \
+			COUNT=$$((COUNT+1)); \
+		done; \
+		if [ $$COUNT -eq 0 ]; then \
+			echo "$(YELLOW)No hay nodos desplegados.$(NC)"; \
+		else \
+			echo ""; \
+			echo "$(GREEN)[OK] Completado$(NC)"; \
+		fi; \
+	fi
+	@echo ""
+
+start:
+	@echo ""
+	@echo "$(YELLOW)Encendiendo nodo(s)...$(NC)"
+	@echo ""
+	@if [ -n "$(NODE)" ]; then \
+		echo "  Arrancando $(NODE) en $(ZONE)"; \
+		gcloud compute instances start $(NODE) --zone=$(ZONE) --quiet 2>/dev/null && \
+			echo "$(GREEN)[OK] $(NODE) encendido$(NC)" || \
+			(echo "$(RED)[ERROR] No se pudo encender $(NODE)$(NC)" && \
+			 echo "  Comprueba: make status"); \
+	else \
+		COUNT=0; \
+		for name in $$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" 2>/dev/null); do \
+			[ -z "$$name" ] && continue; \
+			echo "  Arrancando $$name ($(ZONE))"; \
+			gcloud compute instances start $$name --zone=$(ZONE) --quiet 2>/dev/null && \
+				echo "    $(GREEN)[OK]$$(NC)" || echo "    $(RED)[ERROR]$$(NC)"; \
+			COUNT=$$((COUNT+1)); \
+		done; \
+		if [ $$COUNT -eq 0 ]; then \
+			echo "$(YELLOW)No hay nodos desplegados.$(NC)"; \
+		else \
+			echo ""; \
+			echo "$(GREEN)[OK] Completado$(NC)"; \
+		fi; \
+	fi
 	@echo ""
 
 costs:
