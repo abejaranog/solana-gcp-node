@@ -3,11 +3,13 @@
 
 .PHONY: help install init check deploy plan destroy ssh logs smoke-test status clean access stop start
 
-# Variables (you can override: make ssh NODE=solana-dev-node-01)
+# Variables (you can override: make ssh NODE=solana-dev-node-alpha or TEAM=alpha)
 ZONE ?= europe-southwest1-a
-NODE ?= solana-dev-node-00
+NODE ?=
 TERRAFORM_VERSION ?= 1.8.5
 NODE_COUNT ?= 1
+# GCP project: read from terraform.tfvars so status/logs/ssh use the same project as Terraform
+GCP_PROJECT := $(strip $(shell sed -n 's/^project_id[ \t]*=[ \t]*"\(.*\)".*/\1/p' terraform.tfvars 2>/dev/null))
 
 # Colors for messages
 GREEN  := \033[0;32m
@@ -34,18 +36,18 @@ help:
 	@echo "  3. $(YELLOW)make plan$(NC)       - Preview what will be created (optional)"
 	@echo "  4. $(YELLOW)make deploy$(NC)     - Deploy nodes (creates teams config if needed)"
 	@echo ""
-	@echo "$(GREEN)NODES ON/OFF (sin borrar):$(NC)"
+	@echo "$(GREEN)NODES ON/OFF (without deleting):$(NC)"
 	@echo ""
-	@echo "  $(YELLOW)make stop$(NC)         - Apagar nodos (ahorra coste; datos se conservan)"
-	@echo "  $(YELLOW)make start$(NC)        - Encender nodos"
-	@echo "  $(YELLOW)make stop NODE=name$(NC)   - Apagar un nodo concreto"
-	@echo "  $(YELLOW)make start NODE=name$(NC)  - Encender un nodo concreto"
+	@echo "  $(YELLOW)make stop$(NC)         - Stop nodes (saves cost; data preserved)"
+	@echo "  $(YELLOW)make start$(NC)        - Start nodes"
+	@echo "  $(YELLOW)make stop NODE=name$(NC)   - Stop a specific node"
+	@echo "  $(YELLOW)make start NODE=name$(NC)  - Start a specific node"
 	@echo ""
 	@echo "$(GREEN)MONITORING:$(NC)"
 	@echo ""
 	@echo "  $(YELLOW)make status$(NC)       - Show deployed nodes status"
 	@echo "  $(YELLOW)make logs$(NC)         - View installation logs (first node or NODE=name)"
-	@echo "  $(YELLOW)make smoke-test$(NC)   - Run smoke test on all nodes or NODE=name"
+	@echo "  $(YELLOW)make smoke-test$(NC)   - Run smoke test (all nodes, or TEAM=alpha, or NODE=name)"
 	@echo "  $(YELLOW)make costs$(NC)        - Show cost breakdown"
 	@echo ""
 	@echo "$(GREEN)ACCESS:$(NC)"
@@ -61,10 +63,9 @@ help:
 	@echo "  $(YELLOW)make clean$(NC)        - Clean Terraform temporary files"
 	@echo ""
 	@echo "$(BLUE)TIPS:$(NC)"
-	@echo "  - If it's your first time, run: make check && make init && make deploy"
-	@echo "  - Node takes ~8-10 minutes to be ready after deploy"
-	@echo "  - Use 'make logs' to view installation progress"
-	@echo "  - Remember to run 'make destroy' when done to avoid costs"
+	@echo "  - Full flow: $(GREEN)make install$(NC) -> $(GREEN)make check$(NC) -> $(GREEN)make init$(NC) -> $(GREEN)make deploy$(NC)"
+	@echo "  - Node takes ~8-10 minutes to be ready after deploy; use $(GREEN)make logs$(NC) to watch"
+	@echo "  - When done: $(GREEN)make destroy$(NC) to avoid costs (or $(GREEN)make stop$(NC) to pause)"
 	@echo ""
 
 #==============================================================================
@@ -146,23 +147,33 @@ init: check
 	@echo ""
 	@echo "$(BLUE)Configuring project...$(NC)"
 	@echo ""
-	@if [ -z "$$TF_VAR_project_id" ]; then \
-		echo "$(YELLOW)[WARNING] Variable TF_VAR_project_id not configured$(NC)"; \
-		echo ""; \
-		echo "Configure it with your GCP project ID:"; \
-		echo "  $(GREEN)export TF_VAR_project_id=\"your-gcp-project\"$(NC)"; \
-		echo ""; \
-		echo "To view your projects: $(GREEN)gcloud projects list$(NC)"; \
-		echo ""; \
-		exit 1; \
+	@if [ -n "$$TF_VAR_project_id" ]; then \
+		echo "$(GREEN)[OK] Project configured (env):$(NC) $$TF_VAR_project_id"; \
+	else \
+		project_id=$$(sed -n 's/^project_id[ \t]*=[ \t]*"\(.*\)".*/\1/p' terraform.tfvars 2>/dev/null); \
+		if [ -n "$$project_id" ]; then \
+			echo "$(GREEN)[OK] Project configured (terraform.tfvars):$(NC) $$project_id"; \
+			export TF_VAR_project_id="$$project_id"; \
+		else \
+			echo "$(YELLOW)Project ID not set.$(NC) List projects: $(GREEN)gcloud projects list$(NC)"; \
+			echo ""; \
+			read -p "Enter your GCP project ID: " project_id && [ -n "$$project_id" ] || (echo "$(RED)Project ID cannot be empty$(NC)" && exit 1); \
+			(grep -v '^project_id' terraform.tfvars 2>/dev/null; echo 'project_id = "'"$$project_id"'"') > terraform.tfvars.tmp && mv terraform.tfvars.tmp terraform.tfvars; \
+			export TF_VAR_project_id="$$project_id"; \
+			echo "$(GREEN)[OK] Project saved to terraform.tfvars:$(NC) $$project_id"; \
+		fi; \
 	fi
-	@echo "$(GREEN)[OK] Project configured:$(NC) $$TF_VAR_project_id"
 	@echo ""
-	@echo "$(BLUE)Configuring Application Default Credentials...$(NC)"
-	@gcloud auth application-default login --quiet 2>/dev/null || \
-		(echo "$(YELLOW)Please authenticate with Application Default Credentials:$(NC)" && \
+	@echo "$(BLUE)Checking gcloud authentication...$(NC)"
+	@gcloud auth print-access-token >/dev/null 2>&1 || \
+		(echo "$(RED)[ERROR] User credentials expired or invalid$(NC)" && \
+		 echo "  Run: $(GREEN)gcloud auth login$(NC)" && exit 1)
+	@echo "$(GREEN)[OK] User credentials valid$(NC)"
+	@echo ""
+	@echo "$(BLUE)Checking Application Default Credentials (for Terraform)...$(NC)"
+	@gcloud auth application-default print-access-token >/dev/null 2>&1 && echo "$(GREEN)[OK] ADC already valid$(NC)" || \
+		(echo "$(YELLOW)ADC missing or expired. Opening browser to sign in...$(NC)" && \
 		 gcloud auth application-default login)
-	@echo "$(GREEN)[OK] ADC configured$(NC)"
 	@echo ""
 	@echo "$(BLUE)Initializing Terraform...$(NC)"
 	@terraform init -upgrade
@@ -198,14 +209,15 @@ deploy:
 	@echo "$(BLUE)║                  DEPLOYING SOLANA NODES                        ║$(NC)"
 	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
 	@echo ""
-	@if [ -z "$$TF_VAR_project_id" ]; then \
-		echo "$(RED)[ERROR] TF_VAR_project_id not configured$(NC)"; \
+	@project_id="$$TF_VAR_project_id"; [ -z "$$project_id" ] && project_id="$(GCP_PROJECT)"; \
+	if [ -z "$$project_id" ]; then \
+		echo "$(RED)[ERROR] Project not configured$(NC)"; \
 		echo ""; \
-		echo "Run first: $(GREEN)make init$(NC)"; \
+		echo "Run: $(GREEN)make init$(NC)  (or set TF_VAR_project_id or add project_id to terraform.tfvars)"; \
 		echo ""; \
 		exit 1; \
-	fi
-	@echo "$(YELLOW)Project:$(NC) $$TF_VAR_project_id"
+	fi; \
+	echo "$(YELLOW)Project:$(NC) $$project_id"
 	@echo ""
 	# Check if teams config exists, create if not
 	@if [ ! -f "config/access.yaml" ]; then \
@@ -324,68 +336,72 @@ status:
 	@echo ""
 	@echo "$(BLUE)Solana nodes status:$(NC)"
 	@echo ""
-	@gcloud compute instances list --filter="name~solana-dev-node" \
-		--format="table(name,status,zone,networkInterfaces[0].accessConfigs[0].natIP:label=EXTERNAL_IP)" 2>/dev/null || \
-		(echo "$(YELLOW)No nodes deployed yet.$(NC)" && \
-		 echo "Run: $(GREEN)make deploy$(NC)")
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	gcloud compute instances list --filter="name~solana-dev-node" $$PROJECT_ARG \
+		--format="table(name,status,zone,networkInterfaces[0].accessConfigs[0].natIP:label=EXTERNAL_IP)" || \
+		(echo "$(YELLOW)No nodes found or gcloud failed (see error above).$(NC)" && \
+		 [ -z "$(GCP_PROJECT)" ] && echo "$(YELLOW)Tip: add project_id in terraform.tfvars or set GCP_PROJECT=your-project$(NC)" || \
+		 echo "Project: $(GCP_PROJECT). If nodes exist in console, run: $(GREEN)gcloud config set project $(GCP_PROJECT)$(NC) then make status")
 	@echo ""
 
 #------------------------------------------------------------------------------
-# STOP / START (apagar/encender sin borrar)
+# STOP / START (stop/start without deleting)
 #------------------------------------------------------------------------------
 
 stop:
 	@echo ""
-	@echo "$(YELLOW)Apagando nodo(s)...$(NC)"
+	@echo "$(YELLOW)Stopping node(s)...$(NC)"
 	@echo ""
-	@if [ -n "$(NODE)" ]; then \
-		echo "  Parando $(NODE) en $(ZONE)"; \
-		gcloud compute instances stop $(NODE) --zone=$(ZONE) --quiet 2>/dev/null && \
-			echo "$(GREEN)[OK] $(NODE) apagado$(NC)" || \
-			(echo "$(RED)[ERROR] No se pudo apagar $(NODE)$(NC)" && \
-			 echo "  Comprueba: make status"); \
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	if [ -n "$(NODE)" ]; then \
+		echo "  Stopping $(NODE) in $(ZONE)"; \
+		gcloud compute instances stop $(NODE) --zone=$(ZONE) $$PROJECT_ARG --quiet >/dev/null 2>&1 && \
+			echo "$(GREEN)[OK] $(NODE) stopped$(NC)" || \
+			(echo "$(RED)[ERROR] Could not stop $(NODE)$(NC)" && \
+			 echo "  Check: make status"); \
 	else \
 		COUNT=0; \
-		for name in $$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" 2>/dev/null); do \
+		for name in $$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" $$PROJECT_ARG 2>/dev/null); do \
 			[ -z "$$name" ] && continue; \
-			echo "  Parando $$name ($(ZONE))"; \
-			gcloud compute instances stop $$name --zone=$(ZONE) --quiet 2>/dev/null && \
+			echo "  Stopping $$name ($(ZONE))"; \
+			gcloud compute instances stop $$name --zone=$(ZONE) $$PROJECT_ARG --quiet >/dev/null 2>&1 && \
 				echo "    $(GREEN)[OK]$$(NC)" || echo "    $(RED)[ERROR]$$(NC)"; \
 			COUNT=$$((COUNT+1)); \
 		done; \
 		if [ $$COUNT -eq 0 ]; then \
-			echo "$(YELLOW)No hay nodos desplegados.$(NC)"; \
+			echo "$(YELLOW)No nodes deployed.$(NC)"; \
 		else \
 			echo ""; \
-			echo "$(GREEN)[OK] Completado$(NC)"; \
+			echo "$(GREEN)[OK] Done$(NC)"; \
 		fi; \
 	fi
 	@echo ""
 
 start:
 	@echo ""
-	@echo "$(YELLOW)Encendiendo nodo(s)...$(NC)"
+	@echo "$(YELLOW)Starting node(s)...$(NC)"
 	@echo ""
-	@if [ -n "$(NODE)" ]; then \
-		echo "  Arrancando $(NODE) en $(ZONE)"; \
-		gcloud compute instances start $(NODE) --zone=$(ZONE) --quiet 2>/dev/null && \
-			echo "$(GREEN)[OK] $(NODE) encendido$(NC)" || \
-			(echo "$(RED)[ERROR] No se pudo encender $(NODE)$(NC)" && \
-			 echo "  Comprueba: make status"); \
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	if [ -n "$(NODE)" ]; then \
+		echo "  Starting $(NODE) in $(ZONE)"; \
+		gcloud compute instances start $(NODE) --zone=$(ZONE) $$PROJECT_ARG --quiet >/dev/null 2>&1 && \
+			echo "$(GREEN)[OK] $(NODE) started$(NC)" || \
+			(echo "$(RED)[ERROR] Could not start $(NODE)$(NC)" && \
+			 echo "  Check: make status"); \
 	else \
 		COUNT=0; \
-		for name in $$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" 2>/dev/null); do \
+		for name in $$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" $$PROJECT_ARG 2>/dev/null); do \
 			[ -z "$$name" ] && continue; \
-			echo "  Arrancando $$name ($(ZONE))"; \
-			gcloud compute instances start $$name --zone=$(ZONE) --quiet 2>/dev/null && \
+			echo "  Starting $$name ($(ZONE))"; \
+			gcloud compute instances start $$name --zone=$(ZONE) $$PROJECT_ARG --quiet >/dev/null 2>&1 && \
 				echo "    $(GREEN)[OK]$$(NC)" || echo "    $(RED)[ERROR]$$(NC)"; \
 			COUNT=$$((COUNT+1)); \
 		done; \
 		if [ $$COUNT -eq 0 ]; then \
-			echo "$(YELLOW)No hay nodos desplegados.$(NC)"; \
+			echo "$(YELLOW)No nodes deployed.$(NC)"; \
 		else \
 			echo ""; \
-			echo "$(GREEN)[OK] Completado$(NC)"; \
+			echo "$(GREEN)[OK] Done$(NC)"; \
 		fi; \
 	fi
 	@echo ""
@@ -394,13 +410,14 @@ costs:
 	@echo ""
 	@echo "$(BLUE)Actual cost breakdown for Solana nodes:$(NC)"
 	@echo ""
-	@echo "$(YELLOW)Compute Instances (REAL USAGE):$(NC)"
-	@gcloud compute instances list --filter="name~solana-dev-node" \
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	echo "$(YELLOW)Compute Instances (REAL USAGE):$(NC)"; \
+	gcloud compute instances list --filter="name~solana-dev-node" $$PROJECT_ARG \
 		--format="table(name,machineType,zone,status,creationTimestamp)" 2>/dev/null || \
-		echo "  No instances found"
-	@echo ""
-	@echo "$(YELLOW)Actual hourly cost based on uptime:$(NC)"
-	@gcloud compute instances list --filter="name~solana-dev-node" \
+		echo "  No instances found"; \
+	echo ""; \
+	echo "$(YELLOW)Actual hourly cost based on uptime:$(NC)"; \
+	gcloud compute instances list --filter="name~solana-dev-node" $$PROJECT_ARG \
 		--format="table(name,creationTimestamp)" 2>/dev/null | \
 		tail -n +2 | while read line; do \
 			INSTANCE=$$(echo $$line | awk '{print $$1}'); \
@@ -422,62 +439,101 @@ costs:
 	@echo "  Compute: See individual costs above"
 	@echo "  Note: Based on e2-standard-2 at $0.13/hour"
 	@echo ""
-	@echo "$(YELLOW)Storage costs (actual):$(NC)"
-	@gcloud compute disks list --filter="name~solana-dev-node" \
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	echo "$(YELLOW)Storage costs (actual):$(NC)"; \
+	gcloud compute disks list --filter="name~solana-dev-node" $$PROJECT_ARG \
 		--format="table(name,sizeGb,type)" 2>/dev/null || \
 		echo "  No disks found"
 	@echo ""
 
 logs:
 	@echo ""
-	@if [ -n "$(NODE)" ] && [ "$(NODE)" != "solana-dev-node-00" ]; then \
-		echo "$(BLUE)Installation logs for node $(YELLOW)$(NODE)$(NC)...$(NC)"; \
-		echo "   (Press Ctrl+C to exit)"; \
-		echo ""; \
-		gcloud compute ssh $(NODE) --zone=$(ZONE) --tunnel-through-iap -- tail -f /var/log/solana-setup.log 2>/dev/null || \
-			gcloud compute ssh $(NODE) --zone=$(ZONE) -- tail -f /var/log/solana-setup.log 2>/dev/null || \
-			(echo "$(RED)[ERROR] Could not connect to node$(NC)" && \
-			 echo "Verify it exists: $(GREEN)make status$(NC)"); \
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	FIRST_NODE=$$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" --limit=1 $$PROJECT_ARG 2>/dev/null | head -1); \
+	if [ -n "$(NODE)" ]; then \
+		LOG_NODE="$(NODE)"; \
+	elif [ -n "$$FIRST_NODE" ]; then \
+		LOG_NODE="$$FIRST_NODE"; \
 	else \
-		echo "$(BLUE)Installation logs for first node...$(NC)"; \
-		echo "   (Press Ctrl+C to exit)"; \
-		echo ""; \
-		gcloud compute ssh solana-dev-node-alpha --zone=$(ZONE) --tunnel-through-iap -- tail -f /var/log/solana-setup.log 2>/dev/null || \
-			echo "$(RED)[ERROR] Could not connect to first node$(NC)"; \
-	fi
+		LOG_NODE=""; \
+	fi; \
+	if [ -z "$$LOG_NODE" ]; then \
+		echo "$(RED)[ERROR] No nodes deployed or could not resolve node$(NC)"; \
+		echo "  Check: $(GREEN)make status$(NC)"; \
+		echo "  Or specify node: $(GREEN)make logs NODE=solana-dev-node-alpha$(NC)"; \
+		exit 1; \
+	fi; \
+	echo "$(BLUE)Installation logs for $(YELLOW)$$LOG_NODE$(NC)..."; \
+	echo "   (Ctrl+C to exit)"; \
+	echo ""; \
+	gcloud compute ssh $$LOG_NODE --zone=$(ZONE) $$PROJECT_ARG --tunnel-through-iap -- tail -f /var/log/solana-setup.log 2>/dev/null || \
+		gcloud compute ssh $$LOG_NODE --zone=$(ZONE) $$PROJECT_ARG -- tail -f /var/log/solana-setup.log 2>/dev/null || \
+		(echo "$(RED)[ERROR] Could not connect to node $$LOG_NODE$(NC)" && \
+		 echo "  Check node is running: $(GREEN)make status$(NC)" && \
+		 echo "  If stopped: $(GREEN)make start$(NC)" && \
+		 echo "  Default zone: $(ZONE). Try: make logs ZONE=your-zone" && \
+		 exit 1)
 
 smoke-test:
 	@echo ""
-	@if [ -n "$(NODE)" ] && [ "$(NODE)" != "solana-dev-node-00" ]; then \
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	SSH_CMD="gcloud compute ssh --zone=$(ZONE) $$PROJECT_ARG"; \
+	TIMEOUT=90; \
+	run_ssh() { $$SSH_CMD "$$1" --tunnel-through-iap --command="$$2"; }; \
+	if command -v timeout >/dev/null 2>&1; then run_ssh() { timeout $$TIMEOUT $$SSH_CMD "$$1" --tunnel-through-iap --command="$$2"; }; fi; \
+	if [ -n "$(TEAM)" ]; then \
+		SMOKE_NODE="solana-dev-node-$(TEAM)"; \
+		echo "$(BLUE)Running smoke test on team $(YELLOW)$(TEAM)$(NC) ($$SMOKE_NODE)...$(NC)"; \
+		echo ""; \
+		run_ssh $$SMOKE_NODE "sudo -u ubuntu /home/ubuntu/run-smoke-test.sh" || \
+			run_ssh $$SMOKE_NODE "/home/ubuntu/run-smoke-test.sh" || \
+			(echo "$(RED)[ERROR] Could not run smoke test (timeout or script failed)$(NC)" && echo "Run manually: make ssh TEAM=$(TEAM), then /home/ubuntu/run-smoke-test.sh" && exit 1); \
+	elif [ -n "$(NODE)" ]; then \
 		echo "$(BLUE)Running smoke test on node $(YELLOW)$(NODE)$(NC)...$(NC)"; \
 		echo ""; \
-		gcloud compute ssh $(NODE) --zone=$(ZONE) --command="sudo /home/ubuntu/run-smoke-test.sh" 2>/dev/null || \
-			(gcloud compute ssh $(NODE) --zone=$(ZONE) --command="/home/ubuntu/run-smoke-test.sh" 2>/dev/null || \
-			(echo "$(RED)[ERROR] Could not run smoke test$(NC)" && \
-			 echo "Verify node exists: $(GREEN)make status$(NC)")); \
+		run_ssh $(NODE) "sudo -u ubuntu /home/ubuntu/run-smoke-test.sh" || \
+			run_ssh $(NODE) "/home/ubuntu/run-smoke-test.sh" || \
+			(echo "$(RED)[ERROR] Could not run smoke test (timeout or script failed)$(NC)" && echo "Run manually: make ssh NODE=$(NODE), then /home/ubuntu/run-smoke-test.sh" && exit 1); \
 	else \
 		echo "$(BLUE)Running smoke test on ALL nodes...$(NC)"; \
 		echo ""; \
-		for node in $$(terraform output nodes 2>/dev/null | grep "name" | cut -d'"' -f4 | head -5); do \
+		LIST=$$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" $$PROJECT_ARG 2>/dev/null); \
+		if [ -z "$$LIST" ]; then \
+			echo "$(RED)[ERROR] No nodes found$(NC). Run: make status"; \
+			exit 1; \
+		fi; \
+		for node in $$LIST; do \
 			echo "$(YELLOW)=== $$node ===$(NC)"; \
-			gcloud compute ssh $$node --zone=$(ZONE) --command="sudo /home/ubuntu/run-smoke-test.sh" 2>/dev/null || \
-				(gcloud compute ssh $$node --zone=$(ZONE) --command="/home/ubuntu/run-smoke-test.sh" 2>/dev/null || \
-				echo "  $(RED)[ERROR] Could not run smoke test on $$node$(NC)"); \
+			run_ssh $$node "sudo -u ubuntu /home/ubuntu/run-smoke-test.sh" || \
+				run_ssh $$node "/home/ubuntu/run-smoke-test.sh" || \
+				echo "  $(RED)[ERROR] Smoke test failed on $$node (timeout or script error)$(NC)"; \
 			echo ""; \
 		done; \
-		echo "$(GREEN)All smoke tests completed!$(NC)"; \
+		echo "$(GREEN)All smoke tests completed.$(NC)"; \
 	fi
 	@echo ""
 
 ssh:
 	@echo ""
-	@echo "$(BLUE)Connecting to $(YELLOW)$(NODE)$(NC)...$(NC)"
-	@echo ""
-	@if [ -n "$(TEAM)" ]; then \
+	@PROJECT_ARG=""; [ -n "$(GCP_PROJECT)" ] && PROJECT_ARG="--project=$(GCP_PROJECT)"; \
+	if [ -z "$(TEAM)" ] && [ -z "$(NODE)" ]; then \
+		FIRST_NODE=$$(gcloud compute instances list --filter="name~solana-dev-node" --format="value(name)" --limit=1 $$PROJECT_ARG 2>/dev/null | head -1); \
+		if [ -z "$$FIRST_NODE" ]; then \
+			echo "$(RED)[ERROR] No nodes deployed$(NC)"; \
+			echo "  Run: $(GREEN)make status$(NC)"; \
+			exit 1; \
+		fi; \
+		echo "$(BLUE)Connecting to first node: $(YELLOW)$$FIRST_NODE$(NC)..."; \
+		echo ""; \
+		gcloud compute ssh $$FIRST_NODE --zone=$(ZONE) $$PROJECT_ARG --tunnel-through-iap 2>/dev/null || \
+			gcloud compute ssh $$FIRST_NODE --zone=$(ZONE) $$PROJECT_ARG 2>/dev/null || \
+			(echo "$(RED)[ERROR] Could not connect$(NC)" && echo "  Check: make status" && exit 1); \
+	elif [ -n "$(TEAM)" ]; then \
 		NODE_NAME="solana-dev-node-$(TEAM)"; \
-		echo "$(YELLOW)[INFO] Connecting to team node: $$NODE_NAME$(NC)"; \
-		gcloud compute ssh $$NODE_NAME --zone=$(ZONE) --tunnel-through-iap 2>/dev/null || \
-			gcloud compute ssh $$NODE_NAME --zone=$(ZONE) 2>/dev/null || \
+		echo "$(BLUE)Connecting to $(YELLOW)$$NODE_NAME$(NC)..."; \
+		echo ""; \
+		gcloud compute ssh $$NODE_NAME --zone=$(ZONE) $$PROJECT_ARG --tunnel-through-iap 2>/dev/null || \
+			gcloud compute ssh $$NODE_NAME --zone=$(ZONE) $$PROJECT_ARG 2>/dev/null || \
 			(echo "$(RED)[ERROR] Could not connect to team node '$(TEAM)'$(NC)" && \
 			 echo "$(YELLOW)Available teams:$(NC)"; \
 			 terraform output nodes 2>/dev/null | grep "name" | cut -d'"' -f4 | sed 's/solana-dev-node-//' || echo "  No teams found"; \
@@ -488,9 +544,10 @@ ssh:
 	elif echo "$(NODE)" | grep -qE '^[0-9]+$$'; then \
 		NODE_NAME=$$(terraform output nodes 2>/dev/null | grep -A 5 "\"$(NODE)\"" | grep "name" | cut -d'"' -f4 || echo ""); \
 		if [ -n "$$NODE_NAME" ]; then \
-			echo "$(YELLOW)[INFO] Resolved node $(NODE) to: $$NODE_NAME$(NC)"; \
-			gcloud compute ssh $$NODE_NAME --zone=$(ZONE) --tunnel-through-iap 2>/dev/null || \
-				gcloud compute ssh $$NODE_NAME --zone=$(ZONE) 2>/dev/null || \
+			echo "$(BLUE)Connecting to $(YELLOW)$$NODE_NAME$(NC)..."; \
+			echo ""; \
+			gcloud compute ssh $$NODE_NAME --zone=$(ZONE) $$PROJECT_ARG --tunnel-through-iap 2>/dev/null || \
+				gcloud compute ssh $$NODE_NAME --zone=$(ZONE) $$PROJECT_ARG 2>/dev/null || \
 				(echo "$(RED)[ERROR] Could not connect to node$(NC)" && \
 				 echo "Verify node exists: $(GREEN)make status$(NC)"); \
 		else \
@@ -506,8 +563,10 @@ ssh:
 		fi; \
 	else \
 		if [ -n "$$(terraform output nodes 2>/dev/null | grep -A 10 "$(NODE)" | grep "name")" ]; then \
-			gcloud compute ssh $(NODE) --zone=$(ZONE) --tunnel-through-iap 2>/dev/null || \
-				gcloud compute ssh $(NODE) --zone=$(ZONE) 2>/dev/null || \
+			echo "$(BLUE)Connecting to $(YELLOW)$(NODE)$(NC)..."; \
+			echo ""; \
+			gcloud compute ssh $(NODE) --zone=$(ZONE) $$PROJECT_ARG --tunnel-through-iap 2>/dev/null || \
+				gcloud compute ssh $(NODE) --zone=$(ZONE) $$PROJECT_ARG 2>/dev/null || \
 				(echo "$(RED)[ERROR] Could not connect to node$(NC)" && \
 				 echo "Verify node exists: $(GREEN)make status$(NC)"); \
 		else \

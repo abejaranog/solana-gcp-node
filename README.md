@@ -19,448 +19,153 @@ This blueprint solves that problem: from 4+ hours of manual setup to **10 automa
 
 ---
 
-## Architecture
+## Quick Start
 
-```
-.
-├── main.tf                          # Orchestrator: VPC, firewall, modules
-├── variables.tf                     # Centralized configuration
-├── outputs.tf                       # Endpoints and useful commands
-├── terraform_modules/
-│   └── solana-node/                 # Reusable module
-│       ├── main.tf                  # Instance definition
-│       ├── variables.tf
-│       └── outputs.tf
-└── scripts/
-    └── setup-solana.sh              # Startup script (kernel + software)
-```
+1. **`make install`** — Terraform and gcloud CLI (if you don't have them).
+2. **`make check`** — Verify tools and that you're logged in with gcloud.
+3. **`make init`** — GCP project (prompts if not set), auth check, Terraform init.
+4. **Edit `config/access.yaml`** — Team names and user emails. If the file doesn't exist, the first `make deploy` creates a template; edit it and run `make deploy` again.
+5. **`make deploy`** — Deploy nodes.
 
-**Design Decisions:**
+**Details:** Init writes the project to `terraform.tfvars` and checks user credentials + Application Default Credentials (browser only if ADC is missing). Deploy creates VPC, firewall (SSH via IAP, RPC/WS open), and one node per team — or `solana-dev-node-00`, `01`, … if not using teams. **Time:** ~2 min infra + ~8–10 min software per node.
 
-1. **Modularization:** The `solana-node` module is reusable. You can deploy N nodes by changing `node_count`.
+**After deploy:**
 
-2. **Default Service Account:** Uses GCE's default SA instead of creating a custom one. Reason: simplicity > over-engineering. For dev nodes, default permissions are sufficient.
+| Goal | Command |
+|------|---------|
+| Watch installation | `make logs` or `make logs NODE=name` |
+| List nodes | `make status` |
+| Validate node | `make smoke-test` or `make smoke-test TEAM=alpha` |
+| SSH to node | `make ssh` or `make ssh TEAM=alpha` or `make ssh NODE=name` |
 
-3. **Dual SSH Mode:** IAP (secure) vs direct (fast). The first is default, the second exists for troubleshooting or environments where IAP isn't available.
-
-4. **Idempotent Startup Script:** All tuning is applied on boot. If the instance is recreated, the environment is identical.
-
----
-
-## Technical Specifications
-
-| Component | Configuration | Justification |
-|-----------|---------------|---------------|
-| **Compute** | `n2-standard-16` (16 vCPU, 64GB RAM) | Minimum for test-validator without lag |
-| **Storage** | 500GB SSD (`pd-ssd`) | Consistent IOPS for ledger I/O |
-| **OS** | Ubuntu 22.04 LTS | Long support + Solana compatibility |
-| **Region** | `europe-southwest1` (Madrid) | EU geographic diversification |
-
-### Kernel Tuning (critical for Solana)
-
-```bash
-net.core.rmem_max=134217728          # UDP RX buffer: 128MB
-net.core.wmem_max=134217728          # UDP TX buffer: 128MB
-vm.max_map_count=1000000             # Memory maps for ledger
-nofile=1000000                       # File descriptors
-```
-
-**Why:** Solana protocol uses UDP for gossip/TPU. Small buffers = packet loss = network degradation.
-
-### Complete Stack
-
-- **Rust** (stable): Compiler for Solana programs
-- **Solana CLI** (stable): Command-line tools
-- **Anchor Framework** (latest): Most used development framework
-- **Node.js 20 LTS + Yarn**: For integration tests
-- **Utilities:** jq (JSON parsing), fio (disk benchmarking)
+SSH uses IAP (port 22 not exposed). See [Available Commands](#available-commands) for the full list.
 
 ---
 
 ## Prerequisites
 
-You need three things:
+- **GCP project** with billing enabled  
+- **Terraform** ≥ 1.8.5  
+- **gcloud CLI**  
 
-1. **Active GCP project** with billing enabled
-2. **Terraform** >= 1.8.5
-3. **gcloud CLI** authenticated
+Install tools: `make install` (macOS/Linux). Or install manually: [Terraform](https://www.terraform.io/downloads), [gcloud](https://cloud.google.com/sdk/docs/install).
 
-### Quick Installation
-
-If you don't have Terraform or gcloud CLI installed:
-
-```bash
-# Automatically install both (macOS/Linux)
-make install
-```
-
-This will:
-- Install Terraform via Homebrew (macOS) or apt (Linux)
-- Install gcloud CLI via Homebrew (macOS) or official installer (Linux)
-
-### Manual Installation
-
-Or install manually:
-- **Terraform**: https://www.terraform.io/downloads
-- **gcloud CLI**: https://cloud.google.com/sdk/docs/install
-
-### Authentication
-
-After installation, authenticate:
-```bash
-gcloud auth login
-gcloud config set project YOUR_PROJECT_ID
-gcloud auth application-default login
-```
-
-Required APIs (Compute Engine, IAP) are enabled automatically.
-
-**Pinned versions:**
-- Terraform: `>= 1.8.5` (compatible with higher versions)
-- Google Provider: `~> 7.16` (7.16.x, automatic patches, no breaking changes)
-
-**Note:** The `gcloud auth application-default login` command is required for Terraform to authenticate with GCP. The `make init` command will prompt you for this if not already configured.
-
----
-
-## Quick Start
-
-### First time (step-by-step guided flow)
-
-The Makefile guides you through the entire process. If you've never used Terraform or GCP, simply run:
-
-```bash
-git clone https://github.com/YOUR_USERNAME/solana-gcp-node
-cd solana-gcp-node
-
-# View complete help
-make help
-
-# Step 0: Install prerequisites (if needed)
-make install
-
-# Step 1: Verify you have everything installed
-make check
-
-# Step 2: Configure your GCP project
-export TF_VAR_project_id="your-gcp-project"
-make init
-
-# Step 3: Deploy (creates VPC, firewall, Solana node)
-make deploy
-```
-
-**What gets created?**
-- Dedicated VPC (`10.0.0.0/24`)
-- Firewall rules (SSH via IAP, RPC/WS open)
-- 1 Solana node with 64GB RAM, 500GB SSD
-
-**Time:** ~2 minutes infrastructure + ~8-10 minutes software installation
-
-### Monitor progress
-
-While the node configures:
-
-```bash
-# View installation logs in real-time
-make logs
-
-# View node status
-make status
-```
-
-### Verify everything works
-
-```bash
-make smoke-test
-```
-
-This validates:
-- Rust, Solana CLI, Anchor installed
-- Kernel tuning applied (UDP buffers, file limits)
-- `solana-test-validator` starts and responds
-- Airdrop works
-
-### Connect to the node
-
-```bash
-make ssh
-```
-
-Uses IAP tunnel (secure, zero-config).
-
----
-
-## Advanced Configuration
-
-### Deploy multiple nodes
-
-```bash
-export TF_VAR_node_count=3
-make deploy
-```
-
-Nodes are named `solana-dev-node-00`, `solana-dev-node-01`, etc.
-
-View all nodes:
-
-```bash
-terraform output nodes
-```
-
-Connect to a specific node:
-
-```bash
-make ssh NODE=solana-dev-node-02
-```
-
-### Open SSH (fast development)
-
-If IAP creates friction (debugging, CI/CD, etc.), you can use direct SSH:
-
-```bash
-export TF_VAR_enable_iap_ssh=false
-make deploy
-```
-
-**Warning:** This exposes port 22 to the internet. Only for temporary development.
-
-To restrict to your IP:
-
-```bash
-export TF_VAR_enable_iap_ssh=false
-export TF_VAR_allowed_ssh_cidrs='["203.0.113.42/32"]'
-make deploy
-```
-
-### Change region/machine
-
-```bash
-export TF_VAR_region="us-central1"
-export TF_VAR_zone="us-central1-a"
-export TF_VAR_machine_type="n2-standard-8"  # 8 vCPU, 32GB RAM
-make deploy
-```
+**Authentication:** `make init` checks user credentials (`gcloud auth login` if needed) and Application Default Credentials (runs `gcloud auth application-default login` only when ADC is missing or expired). APIs (Compute, IAP) are enabled by Terraform on deploy. **Versions:** Terraform `>= 1.8.5`, Google Provider `~> 7.16`.
 
 ---
 
 ## Available Commands
 
-### Getting Started
-| Command | Description |
-|---------|-------------|
-| `make help` | Shows complete help with step-by-step guide |
-| `make install` | Installs Terraform and gcloud CLI (macOS/Linux) |
-| `make check` | Verifies prerequisites (Terraform, gcloud) |
-| `make init` | Configures GCP project and initializes Terraform |
-| `make plan` | Previews changes without applying them |
-| `make deploy` | Deploys complete infrastructure |
+| Group | Command | Description |
+|-------|---------|-------------|
+| **Start** | `make help` | Full help and tips |
+| | `make install` | Install Terraform and gcloud CLI |
+| | `make check` | Verify tools and gcloud auth |
+| | `make init` | Project, auth, Terraform init |
+| | `make plan` | Preview Terraform changes |
+| | `make deploy` | Deploy infrastructure |
+| **Nodes on/off** | `make stop` / `make start` | Stop or start all nodes (data preserved) |
+| | `make stop NODE=name` / `make start NODE=name` | One node |
+| **Monitor** | `make status` | List nodes (uses project from terraform.tfvars) |
+| | `make logs` [NODE=name] | Installation logs |
+| | `make smoke-test` [TEAM=alpha \| NODE=name] | Validation on node(s). Uses IAP. |
+| | `make costs` | Cost breakdown |
+| **Access** | `make ssh` [TEAM=alpha \| NODE=name] | SSH to node (IAP) |
+| **Cleanup** | `make access` | Manage config/access.yaml |
+| | `make destroy` | Remove all infrastructure (confirmation) |
+| | `make clean` | Remove local Terraform state/cache only |
 
-### Monitoring
-| Command | Description |
-|---------|-------------|
-| `make status` | Lists all nodes with status and IPs |
-| `make logs` | View installation logs in real-time |
-| `make smoke-test` | Runs end-to-end validation |
+---
 
-### Access
-| Command | Description |
-|---------|-------------|
-| `make ssh` | Connects to first node |
-| `make ssh NODE=solana-dev-node-01` | Connects to specific node |
+## Architecture
 
-### Cleanup
-| Command | Description |
-|---------|-------------|
-| `make destroy` | Removes all infrastructure (asks for confirmation) |
-| `make clean` | Cleans Terraform temporary files |
+```
+.
+├── main.tf                          # Terraform entrypoint, calls solana-node module
+├── variables.tf                     # Project, region, zone, machine_type, IAP, node_count
+├── outputs.tf                       # Node list, SSH commands, summary
+├── terraform.tfvars                 # project_id (created by make init if missing)
+├── terraform.tfvars.example         # Example tfvars
+├── config/
+│   └── access.yaml                 # Teams and user emails (template by deploy if missing)
+├── Makefile                         # install, check, init, deploy, status, ssh, logs, stop/start, etc.
+├── terraform_modules/
+│   └── solana-node/                 # Reusable node module
+│       ├── main.tf                  # VPC, firewall, compute instance, startup script
+│       ├── variables.tf
+│       └── outputs.tf
+└── scripts/
+    ├── setup-modular.sh             # Startup (used if present; teams/services from metadata)
+    └── setup-solana.sh              # Fallback (kernel + Rust, Solana, Anchor, Node)
+```
+
+**Design decisions:** (1) **Modular:** N nodes via `node_count` or teams in `config/access.yaml`. (2) **Default service account** for simplicity. (3) **SSH via IAP** by default; Makefile uses `--tunnel-through-iap`. (4) **Idempotent startup script** so recreating the instance gives the same environment.
+
+---
+
+## Technical Specifications
+
+Defaults in `variables.tf`; override with `TF_VAR_*` or `terraform.tfvars`.
+
+| Component | Default | Note |
+|-----------|---------|------|
+| **Compute** | `e2-standard-2` (2 vCPU, 8 GB) | For heavier load use e.g. `TF_VAR_machine_type=n2-standard-16` |
+| **Storage** | 500GB SSD (`pd-ssd`) | Ledger I/O |
+| **OS** | Ubuntu 22.04 LTS | |
+| **Region / Zone** | `europe-southwest1` / `europe-southwest1-a` (Madrid) | Override with `TF_VAR_region` / `TF_VAR_zone` |
+| **SSH** | IAP only (`enable_iap_ssh=true`) | Port 22 not exposed |
+
+**Kernel tuning (startup script):** `net.core.rmem_max` / `wmem_max` = 128MB, `vm.max_map_count` = 1M, `nofile` = 1M — required for Solana UDP gossip/TPU.
+
+**Stack on node:** Rust, Solana CLI, Anchor (optional), Node.js 20 LTS + Yarn, jq, fio.
+
+---
+
+## Advanced Configuration
+
+**Teams vs numeric nodes:** With teams in `config/access.yaml` you get `solana-dev-node-alpha`, `-beta`, etc. Without, nodes are `solana-dev-node-00`, `01`, … (`NODE_COUNT`).
+
+**Multiple nodes (numeric):** `TF_VAR_node_count=3 make deploy` → connect with `make ssh NODE=solana-dev-node-02`.
+
+**Direct SSH (no IAP):** `TF_VAR_enable_iap_ssh=false make deploy`. Port 22 exposed; use only for debugging. Restrict with `TF_VAR_allowed_ssh_cidrs` if needed.
+
+**Region/machine:** `TF_VAR_region=us-central1`, `TF_VAR_zone=us-central1-a`, `TF_VAR_machine_type=n2-standard-8` (and re-deploy).
 
 ---
 
 ## Security
 
-### Threat Model
+**Scope:** Development only. Ephemeral nodes, no mainnet keys, RPC/WS open for dev.
 
-This blueprint is designed for **development environments**, not production. Assumptions:
+**SSH:** IAP (default) — port 22 not exposed; all Makefile SSH uses `--tunnel-through-iap`. Direct SSH: `enable_iap_ssh=false` for troubleshooting only.
 
-- **Ephemeral nodes:** Created/destroyed frequently
-- **No sensitive data:** No mainnet private keys
-- **Public network:** RPC/WS need to be accessible from internet for development
+**RPC/WebSocket:** 8899/8900 open to `0.0.0.0/0`. For production, use Cloud Armor, VPC peering, or VPN.
 
-### SSH: Two modes
-
-| Mode | Configuration | When to use |
-|------|---------------|-------------|
-| **IAP (default)** | `enable_iap_ssh=true` | Normal development, demos, shared environments |
-| **Direct** | `enable_iap_ssh=false` | Debugging, CI/CD, troubleshooting |
-
-**IAP (Identity-Aware Proxy):**
-- Port 22 **not exposed** to internet
-- Requires GCP authentication
-- `gcloud compute ssh` handles tunnel automatically
-- Zero-config for user
-
-**Direct SSH:**
-- Port 22 open (configurable via `allowed_ssh_cidrs`)
-- Useful when IAP isn't available
-- **Only for temporary development**
-
-### RPC/WebSocket
-
-Ports 8899/8900 are open to `0.0.0.0/0` in both modes. This is intentional to facilitate development.
-
-**For production:** Use Cloud Armor, VPC peering, or VPN.
-
-### Service Account
-
-Uses **default compute service account** instead of creating a custom one. Reasons:
-
-1. **Simplicity:** Fewer resources to manage
-2. **Sufficient permissions:** For dev nodes, default permissions cover everything (Compute, Logging, Monitoring)
-3. **Less friction:** No additional IAM bindings required
-
-If you need custom permissions, modify `terraform_modules/solana-node/main.tf`.
+**Service account:** Default compute SA; change in `terraform_modules/solana-node/main.tf` if you need custom permissions.
 
 ---
 
 ## Smoke Test
 
-Validation script that runs:
-
-```bash
-1. Verify versions (Rust, Solana, Anchor, Node)
-2. Validate kernel tuning (UDP buffers >= 128MB)
-3. Start test-validator
-4. Wait for RPC ready (max 30s)
-5. Airdrop 5 SOL to temporary keypair
-6. Cleanup
-```
-
-If it fails, check `/var/log/solana-setup.log` on the instance.
-
----
-
-## Project Structure
-
-```
-.
-├── main.tf                          # Main orchestrator
-├── variables.tf                     # Configuration
-├── outputs.tf                       # Post-deploy info
-├── Makefile                         # Helper commands
-├── terraform_modules/
-│   └── solana-node/                 # Reusable module
-│       ├── main.tf
-│       ├── variables.tf
-│       └── outputs.tf
-└── scripts/
-    └── setup-solana.sh              # Startup script (175 lines)
-```
-
-**Philosophy:** Modularity without over-engineering. The `solana-node` module is reusable but simple.
+Runs on the node via SSH (IAP): checks Rust/Solana/Anchor/Node, kernel tuning, starts test-validator, airdrop, cleanup. Use `make smoke-test` or `make smoke-test TEAM=alpha` / `NODE=name`. 90s timeout per node when `timeout` is available. On failure, SSH and run `/home/ubuntu/run-smoke-test.sh` or check `/var/log/solana-setup.log`.
 
 ---
 
 ## Troubleshooting
 
-### Startup script fails
-
-```bash
-# View complete logs
-make logs
-
-# Example output:
---- [1/8] Installing Rust...
-  [OK] Rust installed in /opt/rust
---- [2/8] Installing Solana CLI...
-  [OK] Solana CLI installed in /opt/solana
---- [3/8] Installing Node.js and Yarn...
-  [OK] Node.js and Yarn installed
---- [4/8] Installing Anchor Framework...
-  [OK] Anchor installed and accessible in /opt/avm/bin
---- [5/8] Configuring global PATH...
-  [OK] Global PATH configured
---- [6/8] Configuring Smoke Test...
---- [7/8] Validating installation...
-  [OK] All binaries accessible to all users
-========================================
-   SETUP COMPLETE
-========================================
-
-# SSH and check manually
-make ssh
-tail -f /var/log/solana-setup.log
-```
-
-Common causes:
-- Timeout downloading Rust/Solana (slow network)
-- Anchor build fails (insufficient memory - use `n2-standard-16` minimum)
-
-### Smoke test validation
-
-```bash
-# Run end-to-end validation
-make smoke-test
-
-# Example output:
-==========================================
-   SOLANA NODE SMOKE TEST
-==========================================
-
-[1/5] Verificando instalaciones...
-  Rust: rustc 1.93.0 (254b59607 2026-01-19)
-  Solana: solana-cli 3.0.13 (src:90098d26; feat:3604001754, client:Agave)
-  Anchor: anchor-cli 0.32.1
-  Node: v20.20.0
-
-[2/5] Verificando kernel tuning...
-  [OK] UDP buffers: 134217728 bytes
-
-[3/5] Iniciando test-validator...
-  [OK] Validator responding on attempt 1
-
-[4/5] Probando airdrop...
-  [OK] Airdrop successful: 5 SOL
-
-[5/5] Limpiando...
-
-==========================================
-   [PASSED] SMOKE TEST PASSED
-==========================================
-```
-
-### IAP doesn't work
-
-```bash
-# Verify API is enabled
-gcloud services list --enabled | grep iap
-
-# If not, enable manually
-gcloud services enable iap.googleapis.com
-```
-
-### I want to switch from IAP to direct SSH (or vice versa)
-
-```bash
-export TF_VAR_enable_iap_ssh=false  # or true
-terraform apply
-```
-
-Terraform will update only the firewall rule.
+| Issue | What to do |
+|-------|------------|
+| **No nodes / wrong project on `make status`** | Set `project_id` in `terraform.tfvars` or `TF_VAR_project_id`; run `gcloud config set project YOUR_PROJECT_ID`. After reauth: `gcloud auth login` and/or `gcloud auth application-default login`. |
+| **Startup script fails** | `make logs`; `make ssh` and `tail -f /var/log/solana-setup.log`. Often: slow network or need larger machine type. |
+| **Smoke test / SSH doesn't connect** | IAP required. If `make ssh` works, smoke-test should too. Enable API: `gcloud services enable iap.googleapis.com`. |
+| **Init keeps asking for project** | Project is in `terraform.tfvars` or env; init writes it there. Deploy reads the same. |
+| **Strange output on stop/start** | From gcloud internals (e.g. nc on macOS); nodes still stop/start. |
 
 ---
 
 ## Estimated Costs
 
-Based on `n2-standard-16` in `europe-southwest1`:
-
-| Resource | Cost/hour | Cost/month (730h) |
-|----------|-----------|-------------------|
-| Compute (n2-standard-16) | ~$0.78 | ~$569 |
-| Storage (500GB SSD) | ~$0.023 | ~$17 |
-| **Total** | **~$0.80** | **~$586** |
-
-**Tip:** Use `make destroy` when not developing. Recreating the node takes 10 minutes.
+Default `e2-standard-2` in `europe-southwest1`: ~\$0.13/h compute + ~\$0.023/h storage (500GB SSD) → ~\$0.15/h, ~\$112/month (730h). Use `make stop` to pause (data kept); `make destroy` to remove everything.
 
 ---
 
@@ -470,11 +175,4 @@ MIT
 
 ---
 
-## Author
-
-@abejaranog
-
-If this project saves you time, consider:
-- Star on GitHub
-- Report issues
-- Contribute improvements
+**Author:** @abejaranog — If this helps you, star the repo, report issues, or contribute.

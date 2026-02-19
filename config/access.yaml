@@ -4,11 +4,11 @@
 teams:
   alpha:
     users:
-      - "abejagomz0@gmail.com"
+      - "email1@gmail.com"
   
   beta:
     users:
-      - "quimicaolimpiada9@gmail.com"
+      - "email2@gmail.com"
 
 # Services to install on nodes (from setup-solana.sh)
 services:
