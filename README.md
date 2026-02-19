@@ -156,6 +156,7 @@ Runs on the node via SSH (IAP): checks Rust/Solana/Anchor/Node, kernel tuning, s
 | Issue | What to do |
 |-------|------------|
 | **No nodes / wrong project on `make status`** | Set `project_id` in `terraform.tfvars` or `TF_VAR_project_id`; run `gcloud config set project YOUR_PROJECT_ID`. After reauth: `gcloud auth login` and/or `gcloud auth application-default login`. |
+| **Deploy fails: insufficient resources / instance quota** | GCP may have limited capacity in the selected region/zone. **Solutions:** (1) Change region: `TF_VAR_region=us-central1 TF_VAR_zone=us-central1-a make deploy` (or try `europe-west1`, `europe-west4`, `us-east1`). (2) Change machine type: `TF_VAR_machine_type=e2-standard-4 make deploy` (try smaller or different family like `n2-standard-4`). Check available resources: `gcloud compute machine-types list --zones=ZONE`. |
 | **Startup script fails** | `make logs`; `make ssh` and `tail -f /var/log/solana-setup.log`. Often: slow network or need larger machine type. |
 | **Smoke test / SSH doesn't connect** | IAP required. If `make ssh` works, smoke-test should too. Enable API: `gcloud services enable iap.googleapis.com`. |
 | **Init keeps asking for project** | Project is in `terraform.tfvars` or env; init writes it there. Deploy reads the same. |
