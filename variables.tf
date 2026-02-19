@@ -25,7 +25,7 @@ variable "region" {
 variable "zone" {
   description = "GCP zone within the selected region. Must match the region (e.g., if region=europe-west1, zone should be europe-west1-a, europe-west1-b, or europe-west1-c)"
   type        = string
-  default     = "europe-soutwhwest1-a"
+  default     = "europe-southwest1-a"
   validation {
     condition = can(regex("^[a-z]+-[a-z]+[0-9]+-[a-z]$", var.zone))
     error_message = "Zone must be a valid GCP zone format (e.g., europe-west1-b, us-central1-a, europe-southwest1-a). Ensure the zone belongs to the selected region."

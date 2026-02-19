@@ -278,7 +278,57 @@ deploy:
 	fi
 	@echo ""
 	@echo "$(BLUE)Terraform is creating infrastructure...$(NC)"
-	@terraform apply -auto-approve -refresh=false || (echo "$(YELLOW)[INFO] Syncing state after provider bug...$(NC)" && terraform refresh && terraform apply -auto-approve -refresh=false)
+	@TF_OUTPUT=$$(terraform apply -auto-approve -refresh=false 2>&1); \
+	TF_EXIT=$$?; \
+	echo "$$TF_OUTPUT"; \
+	if [ $$TF_EXIT -ne 0 ]; then \
+		if echo "$$TF_OUTPUT" | grep -qiE "(does not have enough resources|unavailable.*zone|Try a different zone|Try a different VM hardware|insufficient resources)"; then \
+			echo ""; \
+			echo "$(RED)╔════════════════════════════════════════════════════════════════╗$(NC)"; \
+			echo "$(RED)║          ERROR: INSUFFICIENT RESOURCES IN ZONE                  ║$(NC)"; \
+			echo "$(RED)╚════════════════════════════════════════════════════════════════╝$(NC)"; \
+			echo ""; \
+			echo "$(YELLOW)Deployment failed because there are not enough resources available in the selected zone.$(NC)"; \
+			echo ""; \
+			echo "$(BLUE)SOLUTIONS:$(NC)"; \
+			echo ""; \
+			echo "$(GREEN)Option 1: Change region and zone$(NC)"; \
+			echo "  Edit $(YELLOW)variables.tf$(NC) or $(YELLOW)terraform.tfvars$(NC) and modify:"; \
+			echo "    $(YELLOW)region = \"us-central1\"$(NC)  # or europe-west1, europe-west4, us-east1, etc."; \
+			echo "    $(YELLOW)zone   = \"us-central1-a\"$(NC)  # must match the region"; \
+			echo ""; \
+			echo "  Or use environment variables:"; \
+			echo "    $(GREEN)TF_VAR_region=us-central1 TF_VAR_zone=us-central1-a make deploy$(NC)"; \
+			echo ""; \
+			echo "$(GREEN)Option 2: Change machine type$(NC)"; \
+			echo "  Edit $(YELLOW)variables.tf$(NC) or $(YELLOW)terraform.tfvars$(NC) and modify:"; \
+			echo "    $(YELLOW)machine_type = \"e2-standard-4\"$(NC)  # or n2-standard-4, e2-standard-8, etc."; \
+			echo ""; \
+			echo "  Or use environment variable:"; \
+			echo "    $(GREEN)TF_VAR_machine_type=e2-standard-4 make deploy$(NC)"; \
+			echo ""; \
+			echo "$(BLUE)Common available regions:$(NC)"; \
+			echo "  - $(YELLOW)europe-west1$(NC) (Belgium) - zones: a, b, c"; \
+			echo "  - $(YELLOW)europe-west4$(NC) (Netherlands) - zones: a, b, c"; \
+			echo "  - $(YELLOW)us-central1$(NC) (Iowa) - zones: a, b, c"; \
+			echo "  - $(YELLOW)us-east1$(NC) (South Carolina) - zones: a, b, c"; \
+			echo ""; \
+			echo "$(BLUE)Recommended machine types:$(NC)"; \
+			echo "  - $(YELLOW)e2-standard-2$(NC) (2 vCPU, 8GB RAM) - development"; \
+			echo "  - $(YELLOW)e2-standard-4$(NC) (4 vCPU, 16GB RAM) - medium workloads"; \
+			echo "  - $(YELLOW)n2-standard-8$(NC) (8 vCPU, 32GB RAM) - production"; \
+			echo ""; \
+			echo "$(YELLOW)Check available resources in a zone:$(NC)"; \
+			echo "  $(GREEN)gcloud compute machine-types list --zones=ZONE$(NC)"; \
+			echo ""; \
+			exit 1; \
+		fi; \
+		if [ $$TF_EXIT -ne 0 ] && ! echo "$$TF_OUTPUT" | grep -qiE "(does not have enough resources|unavailable.*zone|Try a different zone|Try a different VM hardware|insufficient resources)"; then \
+			echo "$(YELLOW)[INFO] Syncing state after provider bug...$(NC)"; \
+			terraform refresh && terraform apply -auto-approve -refresh=false; \
+		fi; \
+		exit $$TF_EXIT; \
+	fi
 	@echo ""
 	@echo "$(GREEN)╔════════════════════════════════════════════════════════════════╗$(NC)"
 	@echo "$(GREEN)║                    DEPLOYMENT COMPLETE                         ║$(NC)"
