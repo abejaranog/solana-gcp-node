@@ -223,16 +223,7 @@ deploy:
 	@if [ ! -f "config/access.yaml" ]; then \
 		echo "$(YELLOW)[INFO] No teams config found. Creating template...$(NC)"; \
 		mkdir -p config; \
-		echo "# Team Configuration for Solana Nodes" > config/access.yaml; \
-		echo "teams:" >> config/access.yaml; \
-		echo "  alpha:" >> config/access.yaml; \
-		echo "    users:" >> config/access.yaml; \
-		echo "      - \"dev1@company.com\"" >> config/access.yaml; \
-		echo "      - \"dev2@company.com\"" >> config/access.yaml; \
-		echo "  beta:" >> config/access.yaml; \
-		echo "    users:" >> config/access.yaml; \
-		echo "      - \"dev3@company.com\"" >> config/access.yaml; \
-		echo "      - \"dev4@company.com\"" >> config/access.yaml; \
+		cp config/access.yaml.example config/access.yaml; \
 		echo "$(GREEN)[OK] Template created in config/access.yaml$(NC)"; \
 		echo "Edit the file with your team emails and run 'make deploy' again."; \
 		echo ""; \
@@ -644,16 +635,7 @@ access:
 	@if [ ! -f "config/access.yaml" ]; then \
 		echo "$(YELLOW)[INFO] No access.yaml found. Creating template...$(NC)"; \
 		echo ""; \
-		echo "# Team Configuration for Solana Nodes" > config/access.yaml; \
-		echo "teams:" >> config/access.yaml; \
-		echo "  alpha:" >> config/access.yaml; \
-		echo "    users:" >> config/access.yaml; \
-		echo "      - \"dev1@company.com\"" >> config/access.yaml; \
-		echo "      - \"dev2@company.com\"" >> config/access.yaml; \
-		echo "  beta:" >> config/access.yaml; \
-		echo "    users:" >> config/access.yaml; \
-		echo "      - \"dev3@company.com\"" >> config/access.yaml; \
-		echo "      - \"dev4@company.com\"" >> config/access.yaml; \
+		cp config/access.yaml.example config/access.yaml; \
 		echo ""; \
 		echo "$(GREEN)[OK] Template created in config/access.yaml$(NC)"; \
 		echo "Edit the file and run 'make plan' to see changes."; \

@@ -1,0 +1,44 @@
+# Team Configuration for Solana Nodes
+# Define teams, users, and services for hackathon deployment
+
+teams:
+  alpha:
+    users:
+      - "dev1@company.com"
+      - "dev2@company.com"
+
+  beta:
+    users:
+      - "dev3@company.com"
+      - "dev4@company.com"
+
+# Services to install on nodes (from setup-solana.sh)
+services:
+  kernel_tuning:
+    enabled: true
+    description: "Kernel optimization for Solana performance"
+  
+  system_dependencies:
+    enabled: true
+    description: "Build tools and system packages"
+  
+  rust:
+    enabled: true
+    description: "Rust toolchain for Solana programs"
+  
+  solana:
+    enabled: true
+    description: "Solana CLI and validator"
+  
+  nodejs:
+    enabled: true
+    description: "Node.js runtime and Yarn"
+  
+  anchor:
+    enabled: false
+    description: "Anchor Framework for Solana programs"
+
+# Global settings
+settings:
+  log_level: "info"
+  auto_start_validator: false

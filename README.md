@@ -24,7 +24,7 @@ This blueprint solves that problem: from 4+ hours of manual setup to **10 automa
 1. **`make install`** — Terraform and gcloud CLI (if you don't have them).
 2. **`make check`** — Verify tools and that you're logged in with gcloud.
 3. **`make init`** — GCP project (prompts if not set), auth check, Terraform init.
-4. **Edit `config/access.yaml`** — Define your teams and user emails. **One node is created per team** (e.g. team `alpha` → `solana-dev-node-alpha`, team `beta` → `solana-dev-node-beta`). If the file doesn't exist, the first `make deploy` creates a template; edit it and run `make deploy` again.
+4. **Edit `config/access.yaml`** — Define your teams and user emails. **One node is created per team** (e.g. team `alpha` → `solana-dev-node-alpha`, team `beta` → `solana-dev-node-beta`). If the file doesn't exist, the first `make deploy` copies it from `config/access.yaml.example`; edit it and run `make deploy` again. `config/access.yaml` is gitignored because it contains user emails.
 5. **`make deploy`** — Deploy nodes (one per team in `config/access.yaml`).
 
 **Details:** Init writes the project to `terraform.tfvars` and checks user credentials + Application Default Credentials (browser only if ADC is missing). Deploy creates VPC, firewall (SSH via IAP, RPC/WS open), and **one node per team** in `config/access.yaml` — or `solana-dev-node-00`, `01`, … if you're not using teams. **Time:** ~2 min infra + ~8–10 min software per node.
@@ -87,7 +87,8 @@ Install tools: `make install` (macOS/Linux). Or install manually: [Terraform](ht
 ├── terraform.tfvars                 # project_id (created by make init if missing)
 ├── terraform.tfvars.example         # Example tfvars
 ├── config/
-│   └── access.yaml                 # Teams and user emails (template by deploy if missing)
+│   ├── access.yaml.example         # Template: teams, services, settings
+│   └── access.yaml                 # Your teams and user emails (gitignored, copied from example)
 ├── Makefile                         # install, check, init, deploy, status, ssh, logs, stop/start, etc.
 ├── terraform_modules/
 │   └── solana-node/                 # Reusable node module
