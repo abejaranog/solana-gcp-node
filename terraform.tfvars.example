@@ -3,12 +3,13 @@
 # REQUIRED: Your GCP project
 project_id = "your-gcp-project-id"
 
-# Region and zone (default: Madrid)
-# region = "europe-southwest1"
-# zone   = "europe-southwest1-a"
+# Region and zone (default: Belgium)
+# region = "europe-west1"
+# zone   = "europe-west1-b"
+# Madrid: region = "europe-southwest1", zone = "europe-southwest1-a"
 
-# Machine type (default: n2-standard-16 = 64GB RAM)
-# machine_type = "n2-standard-16"
+# Machine type (default: e2-standard-2 = 2 vCPU, 8GB RAM)
+# machine_type = "e2-standard-2"
 
 # Number of nodes to deploy (default: 1)
 # node_count = 1

@@ -6,7 +6,7 @@ variable "project_id" {
 variable "region" {
   description = "GCP region where resources will be deployed. Common options: europe-west1 (Belgium), europe-west4 (Netherlands), europe-southwest1 (Madrid), us-central1 (Iowa), us-east1 (South Carolina), us-west1 (Oregon)"
   type        = string
-  default     = "europe-southwest1" # Madrid (Ideal for Superteam Spain)
+  default     = "europe-west1" # Belgium — broad capacity vs single-city regions
   validation {
     condition = contains([
       "europe-west1", "europe-west2", "europe-west3", "europe-west4", "europe-west6",
@@ -25,7 +25,7 @@ variable "region" {
 variable "zone" {
   description = "GCP zone within the selected region. Must match the region (e.g., if region=europe-west1, zone should be europe-west1-a, europe-west1-b, or europe-west1-c)"
   type        = string
-  default     = "europe-southwest1-a"
+  default     = "europe-west1-b"
   validation {
     condition = can(regex("^[a-z]+-[a-z]+[0-9]+-[a-z]$", var.zone))
     error_message = "Zone must be a valid GCP zone format (e.g., europe-west1-b, us-central1-a, europe-southwest1-a). Ensure the zone belongs to the selected region."

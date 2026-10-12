@@ -4,7 +4,7 @@
 .PHONY: help install init check deploy plan destroy ssh logs smoke-test status clean access stop start
 
 # Variables (you can override: make ssh NODE=solana-dev-node-alpha or TEAM=alpha)
-ZONE ?= europe-southwest1-a
+ZONE ?= europe-west1-b
 NODE ?=
 TERRAFORM_VERSION ?= 1.8.5
 NODE_COUNT ?= 1

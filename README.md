@@ -14,7 +14,7 @@ This blueprint solves that problem: from 4+ hours of manual setup to **10 automa
 
 **Impact:**
 - **Developer Tooling:** Reduces Solana onboarding friction
-- **Censorship Resistance:** Facilitates geographic diversification (includes Madrid region)
+- **Censorship Resistance:** Facilitates geographic diversification (default region: Belgium)
 - **Reproducibility:** Versioned, auditable infrastructure
 
 ---
@@ -113,7 +113,7 @@ Defaults in `variables.tf`; override with `TF_VAR_*` or `terraform.tfvars`.
 | **Compute** | `e2-standard-2` (2 vCPU, 8 GB) | For heavier load use e.g. `TF_VAR_machine_type=n2-standard-16` |
 | **Storage** | 500GB SSD (`pd-ssd`) | Ledger I/O |
 | **OS** | Ubuntu 22.04 LTS | |
-| **Region / Zone** | `europe-southwest1` / `europe-southwest1-a` (Madrid) | Override with `TF_VAR_region` / `TF_VAR_zone` |
+| **Region / Zone** | `europe-west1` / `europe-west1-b` (Belgium) | Override with `TF_VAR_region` / `TF_VAR_zone` (e.g. Madrid: `TF_VAR_region=europe-southwest1 TF_VAR_zone=europe-southwest1-a`) |
 | **SSH** | IAP only (`enable_iap_ssh=true`) | Port 22 not exposed |
 
 **Kernel tuning (startup script):** `net.core.rmem_max` / `wmem_max` = 128MB, `vm.max_map_count` = 1M, `nofile` = 1M — required for Solana UDP gossip/TPU.
@@ -167,7 +167,7 @@ Runs on the node via SSH (IAP): checks Rust/Solana/Anchor/Node, kernel tuning, s
 
 ## Estimated Costs
 
-Default `e2-standard-2` in `europe-southwest1`: ~\$0.13/h compute + ~\$0.023/h storage (500GB SSD) → ~\$0.15/h, ~\$112/month (730h). Use `make stop` to pause (data kept); `make destroy` to remove everything.
+Default `e2-standard-2` in `europe-west1`: ~\$0.13/h compute + ~\$0.023/h storage (500GB SSD) → ~\$0.15/h, ~\$112/month (730h). Use `make stop` to pause (data kept); `make destroy` to remove everything.
 
 ---
 
